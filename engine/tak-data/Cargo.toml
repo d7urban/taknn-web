@@ -1,0 +1,10 @@
+[package]
+name = "tak-data"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tak-core = { path = "../tak-core" }
+tak-search = { path = "../tak-search" }
+arrayvec = { workspace = true }
+rand = { workspace = true }

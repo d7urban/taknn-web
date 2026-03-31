@@ -1,0 +1,9 @@
+# Rust build artifacts
+engine/target/
+
+# Node
+web/node_modules/
+web/.next/
+
+# wasm-pack output (rebuilt from source)
+engine/tak-wasm/pkg/

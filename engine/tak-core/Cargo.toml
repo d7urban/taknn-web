@@ -1,0 +1,9 @@
+[package]
+name = "tak-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arrayvec = { workspace = true }
+rand = { workspace = true }
+rand_xoshiro = { workspace = true }
