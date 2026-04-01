@@ -286,8 +286,8 @@ impl GameState {
 
             // Drop `drop_count` pieces from the bottom of the carried sub-stack.
             let end_idx = carry_idx + drop_count as usize;
-            for i in carry_idx..end_idx {
-                self.board.get_mut(target_sq).push(carried[i]);
+            for item in carried.iter().take(end_idx).skip(carry_idx) {
+                self.board.get_mut(target_sq).push(*item);
             }
             carry_idx = end_idx;
         }
@@ -1625,7 +1625,7 @@ mod tests {
             assert_eq!(state.reserves[3], config.capstones);
             assert_eq!(state.board.empty_count(size), (size as u32) * (size as u32));
             assert!(state.is_opening_phase());
-            assert!(!state.zobrist == 0 || true); // just check it doesn't panic
+            let _ = state.zobrist; // just check it doesn't panic
         }
     }
 

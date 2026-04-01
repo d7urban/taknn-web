@@ -93,7 +93,7 @@ fn ptn_to_dir(ch: char) -> Option<Direction> {
 /// Parse a single PTN move string. Needs GameState to resolve template IDs.
 pub fn parse_move(s: &str, state: &GameState) -> Result<Move, PtnError> {
     // Strip result markers and whitespace.
-    let s = s.trim().trim_end_matches(|c: char| c == '\'' || c == '"' || c == '!' || c == '?');
+    let s = s.trim().trim_end_matches(['\'', '"', '!', '?']);
     // Strip capstone-flatten marker '*'.
     let s = s.trim_end_matches('*');
 

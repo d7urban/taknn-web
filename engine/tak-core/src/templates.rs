@@ -206,8 +206,8 @@ pub fn total_movement_actions(size: u8) -> u32 {
     // Precompute actions_per_ray for d in 1..=size-1 to avoid redundant work.
     let max_d = (size - 1) as usize;
     let mut ray_actions: Vec<u32> = vec![0; max_d + 1]; // index 0 unused
-    for d in 1..=max_d {
-        ray_actions[d] = actions_per_ray_distance(carry_limit, d as u8);
+    for (d, slot) in ray_actions.iter_mut().enumerate().skip(1) {
+        *slot = actions_per_ray_distance(carry_limit, d as u8);
     }
 
     let mut total = 0u32;

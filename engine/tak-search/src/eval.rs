@@ -161,8 +161,8 @@ fn road_connectivity(board: &Board, size: u8) -> (u8, u8) {
     let mut parent = [0u8; 64];
     let mut rank = [0u8; 64];
     let mut group_size = [1u8; 64];
-    for i in 0..64 {
-        parent[i] = i as u8;
+    for (i, p) in parent.iter_mut().enumerate() {
+        *p = i as u8;
     }
 
     let idx = |r: usize, c: usize| -> usize { r * 8 + c };

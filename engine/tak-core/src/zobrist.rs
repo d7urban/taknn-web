@@ -152,8 +152,8 @@ pub fn compute_full(
     }
 
     // Reserves
-    for rtype in 0..4 {
-        let count = reserves[rtype] as usize;
+    for (rtype, &reserve) in reserves.iter().enumerate() {
+        let count = reserve as usize;
         debug_assert!(count < MAX_RESERVE, "reserve count {} out of range", count);
         hash ^= keys.reserves[rtype][count];
     }

@@ -277,7 +277,7 @@ impl MoveGen {
     ///   2. The piece being dropped is a capstone (the original top of the
     ///      source stack, which is the last piece remaining in the carried
     ///      sub-stack).
-    ///   This is the "capstone flattens wall" rule.
+    ///      This is the "capstone flattens wall" rule.
     fn is_spread_legal(
         board: &Board,
         src_r: u8,
@@ -1417,7 +1417,7 @@ mod tests {
             {
                 if src.row() == 2 && src.col() == 0 {
                     let seq = templates.get_sequence(*template);
-                    return seq.drops.as_slice() == &[1, 1];
+                    return seq.drops.as_slice() == [1, 1];
                 }
             }
             false

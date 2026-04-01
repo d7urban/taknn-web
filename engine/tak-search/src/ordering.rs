@@ -56,6 +56,12 @@ pub struct HistoryTable {
     mask: usize,
 }
 
+impl Default for HistoryTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HistoryTable {
     pub fn new() -> Self {
         let size = 1 << 14; // 16K entries

@@ -59,9 +59,9 @@ fn build_one(state: &GameState, mv: Move) -> MoveDescriptor {
             }
             let dst = *path.last().unwrap_or(&src.0);
 
-            let top_is_cap = state.board.get(src).top.map_or(false, |p| p.is_cap());
+            let top_is_cap = state.board.get(src).top.is_some_and(|p| p.is_cap());
             let dst_sq = Square(dst);
-            let dst_has_wall = state.board.get(dst_sq).top.map_or(false, |p| p.is_wall());
+            let dst_has_wall = state.board.get(dst_sq).top.is_some_and(|p| p.is_wall());
             let last_drop_one = drops.last().copied() == Some(1);
             let capstone_flatten = top_is_cap && dst_has_wall && last_drop_one;
             let enters_occupied = !state.board.get(dst_sq).is_empty();

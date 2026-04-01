@@ -121,7 +121,7 @@ mod tests {
         // is_occupied (channel 6)
         assert_eq!(t.data[6 * 64 + si], 1.0);
         // WhiteFlat (channel 0) should be 0.
-        assert_eq!(t.data[0 * 64 + si], 0.0);
+        assert_eq!(t.data[si], 0.0);
     }
 
     #[test]

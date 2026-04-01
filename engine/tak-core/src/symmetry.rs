@@ -187,7 +187,7 @@ impl D4 {
     pub fn from_u8(v: u8) -> Option<D4> {
         if v < 8 {
             // SAFETY: v is in 0..8 which covers all variants.
-            Some(unsafe { std::mem::transmute(v) })
+            Some(unsafe { std::mem::transmute::<u8, D4>(v) })
         } else {
             None
         }
@@ -391,7 +391,7 @@ mod tests {
     fn transform_is_bijection_on_active_region() {
         for &size in &SIZES {
             for &sym in &D4::ALL {
-                let mut seen = vec![false; 64];
+                let mut seen = [false; 64];
                 for r in 0..size {
                     for c in 0..size {
                         let sq = Square::from_rc(r, c);
