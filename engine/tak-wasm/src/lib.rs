@@ -287,8 +287,10 @@ impl TakGame {
             return Err(JsError::new("game is already over"));
         }
 
+        // Cap depth for WASM to limit stack usage.
+        let effective_depth = max_depth.min(12);
         let config = SearchConfig {
-            max_depth,
+            max_depth: effective_depth,
             max_time_ms: time_ms as u64,
             tt_size_mb: 4,
         };

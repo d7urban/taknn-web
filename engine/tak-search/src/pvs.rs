@@ -953,4 +953,43 @@ mod tests {
             result.score
         );
     }
+
+    /// Simulate the exact WASM bot scenario: 6x6 game, play a few moves,
+    /// then run search with the same parameters the bot uses (depth 20, 3s, 4MB TT).
+    #[test]
+    fn wasm_bot_scenario_early_game() {
+        use rand::Rng;
+        use rand::SeedableRng;
+
+        // Try many seeds to catch position-specific crashes.
+        for seed in 0..50u64 {
+            let mut rng = rand_xoshiro::Xoshiro256StarStar::seed_from_u64(seed);
+            let config = GameConfig::standard(6);
+            let mut state = GameState::new(config);
+
+            // Play 4-8 random moves (around ply 6).
+            let num_moves = rng.random_range(4..=8u32);
+            for _ in 0..num_moves {
+                if state.result.is_terminal() { break; }
+                let moves = state.legal_moves();
+                if moves.is_empty() { break; }
+                let idx = rng.random_range(0..moves.len());
+                state.apply_move(moves[idx]);
+            }
+
+            if state.result.is_terminal() { continue; }
+
+            // Use exact same params as WASM bot.
+            let mut search = PvsSearch::new(
+                SearchConfig { max_depth: 20, max_time_ms: 3000, tt_size_mb: 4 },
+                HeuristicEval,
+            );
+            let result = search.search(&mut state);
+            assert!(
+                result.best_move.is_some(),
+                "seed {}: should find a move at ply {}",
+                seed, state.ply
+            );
+        }
+    }
 }

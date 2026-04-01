@@ -48,9 +48,14 @@ self.onmessage = async (e: MessageEvent) => {
 
       game.free();
     } catch (err: unknown) {
+      // WASM panics log to console.error (via panic hook) then throw RuntimeError("unreachable").
+      // Include any available details in the error message.
+      const msg = err instanceof Error
+        ? `${err.message}${err.stack ? '\n' + err.stack : ''}`
+        : String(err);
       self.postMessage({
         type: "error",
-        message: err instanceof Error ? err.message : String(err),
+        message: msg,
       });
     }
   }
