@@ -30,20 +30,9 @@ self.onmessage = async (e: MessageEvent) => {
 
       const result = game.botMove(msg.maxDepth || 20, msg.timeMs || 3000);
 
-      // Get updated state after the bot's move.
-      const board = game.getBoard();
-      const info = game.getInfo();
-      const legalMoves = game.isGameOver() ? [] : game.legalMoves();
-      const moveHistory = game.getMoveHistory();
-
       self.postMessage({
         type: "result",
         searchResult: result,
-        board,
-        gameInfo: info,
-        legalMoves,
-        moveHistory,
-        tps: game.getTps(),
       });
 
       game.free();
