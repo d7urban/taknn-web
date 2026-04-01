@@ -106,6 +106,9 @@ export default function Home() {
   const [lastSearchInfo, setLastSearchInfo] = useState<SearchInfo | null>(null);
   const workerRef = useRef<Worker | null>(null);
 
+  // Last move highlight: set of board indices that changed.
+  const [lastMoveSquares, setLastMoveSquares] = useState<Set<number>>(new Set());
+
   const resetInteraction = useCallback(() => {
     setSelectedSquare(null);
     setSpreadState(null);
@@ -155,10 +158,32 @@ export default function Home() {
     return () => worker.terminate();
   }, []);
 
-  const refreshState = useCallback(() => {
+  const refreshState = useCallback((detectChanges = true) => {
     const game = gameRef.current;
     if (!game) return;
-    setSquares(game.getBoard());
+    const newSquares = game.getBoard();
+    if (detectChanges) {
+      // Find squares whose pieces changed compared to previous board.
+      const changed = new Set<number>();
+      for (let i = 0; i < 64; i++) {
+        const oldSq = squares[i];
+        const newSq = newSquares[i];
+        if (!oldSq && !newSq) continue;
+        if (!oldSq || !newSq) { changed.add(i); continue; }
+        if (oldSq.pieces.length !== newSq.pieces.length) { changed.add(i); continue; }
+        for (let j = 0; j < oldSq.pieces.length; j++) {
+          if (oldSq.pieces[j].color !== newSq.pieces[j].color ||
+              oldSq.pieces[j].pieceType !== newSq.pieces[j].pieceType) {
+            changed.add(i);
+            break;
+          }
+        }
+      }
+      setLastMoveSquares(changed);
+    } else {
+      setLastMoveSquares(new Set());
+    }
+    setSquares(newSquares);
     setGameInfo(game.getInfo());
     if (!game.isGameOver()) {
       setLegalMoves(game.legalMoves());
@@ -166,7 +191,7 @@ export default function Home() {
       setLegalMoves([]);
     }
     resetInteraction();
-  }, [resetInteraction]);
+  }, [resetInteraction, squares]);
 
   // Start a new game.
   const startGame = useCallback(
@@ -175,7 +200,7 @@ export default function Home() {
       gameRef.current?.free();
       gameRef.current = new wasm.TakGame(size);
       setPlacementType("flat");
-      refreshState();
+      refreshState(false);
     },
     [wasm, refreshState]
   );
@@ -404,6 +429,7 @@ export default function Home() {
           size={gameInfo?.size ?? 6}
           selectedSquare={spreadState ? spreadState.sourceIdx : selectedSquare}
           highlights={highlights}
+          lastMoveSquares={lastMoveSquares}
           onSquareClick={handleSquareClick}
         />
         <Controls

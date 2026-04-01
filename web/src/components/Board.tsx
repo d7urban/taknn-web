@@ -7,6 +7,7 @@ interface BoardProps {
   size: number;
   selectedSquare: number | null;
   highlights: Map<number, "source" | "drop" | "valid">;
+  lastMoveSquares: Set<number>;
   onSquareClick: (index: number) => void;
 }
 
@@ -21,7 +22,7 @@ function highlightBorder(
   return "1px solid #8b7355";
 }
 
-export default function Board({ squares, size, selectedSquare, highlights, onSquareClick }: BoardProps) {
+export default function Board({ squares, size, selectedSquare, highlights, lastMoveSquares, onSquareClick }: BoardProps) {
   // Render rows from top (row size-1) to bottom (row 0) visually.
   const rows = [];
   for (let r = size - 1; r >= 0; r--) {
@@ -32,8 +33,12 @@ export default function Board({ squares, size, selectedSquare, highlights, onSqu
       if (!sq) continue;
       const isSelected = selectedSquare === idx;
       const highlight = highlights.get(idx);
+      const isLastMove = lastMoveSquares.has(idx);
       const topPiece = sq.pieces.length > 0 ? sq.pieces[sq.pieces.length - 1] : null;
       const stackHeight = sq.pieces.length;
+
+      const baseBg = (r + c) % 2 === 0 ? "#f5e6c8" : "#e8d5a8";
+      const bg = isLastMove ? ((r + c) % 2 === 0 ? "#e8e0a0" : "#ddd590") : baseBg;
 
       cells.push(
         <div
@@ -43,7 +48,7 @@ export default function Board({ squares, size, selectedSquare, highlights, onSqu
             width: 64,
             height: 64,
             border: highlightBorder(isSelected, highlight),
-            backgroundColor: (r + c) % 2 === 0 ? "#f5e6c8" : "#e8d5a8",
+            backgroundColor: bg,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
