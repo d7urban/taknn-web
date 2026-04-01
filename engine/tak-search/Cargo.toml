@@ -7,3 +7,4 @@ edition = "2021"
 tak-core = { path = "../tak-core" }
 arrayvec = { workspace = true }
 rand = { workspace = true }
+rand_xoshiro = { workspace = true }

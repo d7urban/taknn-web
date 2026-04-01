@@ -186,6 +186,7 @@ version = "0.1.0"
 dependencies = [
  "arrayvec",
  "rand",
+ "rand_xoshiro",
  "tak-core",
 ]
 
@@ -198,6 +199,7 @@ dependencies = [
  "serde-wasm-bindgen",
  "serde_json",
  "tak-core",
+ "tak-search",
  "wasm-bindgen",
 ]
 

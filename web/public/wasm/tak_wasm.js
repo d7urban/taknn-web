@@ -41,6 +41,19 @@ export class TakGame {
         }
     }
     /**
+     * Run search and apply the best move. Returns search info.
+     * @param {number} max_depth
+     * @param {number} time_ms
+     * @returns {any}
+     */
+    botMove(max_depth, time_ms) {
+        const ret = wasm.takgame_botMove(this.__wbg_ptr, max_depth, time_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * Create a game from a TPS string.
      * @param {string} tps_str
      * @returns {TakGame}
@@ -149,6 +162,20 @@ export class TakGame {
     ply() {
         const ret = wasm.takgame_ply(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Run heuristic search and return the best move + info.
+     * `max_depth` and `time_ms` control search limits.
+     * @param {number} max_depth
+     * @param {number} time_ms
+     * @returns {any}
+     */
+    searchMove(max_depth, time_ms) {
+        const ret = wasm.takgame_searchMove(this.__wbg_ptr, max_depth, time_ms);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
     }
     /**
      * Get the board size.

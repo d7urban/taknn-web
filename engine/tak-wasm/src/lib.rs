@@ -236,6 +236,92 @@ impl TakGame {
     pub fn ply(&self) -> u16 {
         self.state.ply
     }
+
+    /// Run heuristic search and return the best move + info.
+    /// `max_depth` and `time_ms` control search limits.
+    #[wasm_bindgen(js_name = "searchMove")]
+    pub fn search_move(&mut self, max_depth: u8, time_ms: u32) -> Result<JsValue, JsError> {
+        use tak_search::eval::HeuristicEval;
+        use tak_search::pvs::{PvsSearch, SearchConfig};
+
+        if self.state.result.is_terminal() {
+            return Err(JsError::new("game is already over"));
+        }
+
+        let config = SearchConfig {
+            max_depth,
+            max_time_ms: time_ms as u64,
+            tt_size_mb: 16,
+        };
+        let mut search = PvsSearch::new(config, HeuristicEval);
+        let result = search.search(&mut self.state);
+
+        let best_ptn = result.best_move.map(|mv| ptn::format_move(mv, &self.state));
+        let pv_ptn: Vec<String> = result.pv.iter().map(|mv| ptn::format_move(*mv, &self.state)).collect();
+
+        let info = SearchResultInfo {
+            best_move: best_ptn.unwrap_or_default(),
+            score: result.score,
+            depth: result.depth,
+            nodes: result.nodes as u32,
+            pv: pv_ptn,
+            tt_hits: result.tt_hits as u32,
+        };
+
+        serde_wasm_bindgen::to_value(&info).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Run search and apply the best move. Returns search info.
+    #[wasm_bindgen(js_name = "botMove")]
+    pub fn bot_move(&mut self, max_depth: u8, time_ms: u32) -> Result<JsValue, JsError> {
+        use tak_search::eval::HeuristicEval;
+        use tak_search::pvs::{PvsSearch, SearchConfig};
+
+        if self.state.result.is_terminal() {
+            return Err(JsError::new("game is already over"));
+        }
+
+        let config = SearchConfig {
+            max_depth,
+            max_time_ms: time_ms as u64,
+            tt_size_mb: 16,
+        };
+        let mut search = PvsSearch::new(config, HeuristicEval);
+        let result = search.search(&mut self.state);
+
+        let mv = result
+            .best_move
+            .ok_or_else(|| JsError::new("no move found"))?;
+
+        let best_ptn = ptn::format_move(mv, &self.state);
+        let pv_ptn: Vec<String> = result.pv.iter().map(|m| ptn::format_move(*m, &self.state)).collect();
+
+        // Apply the move.
+        self.state.apply_move(mv);
+        self.move_history.push(mv);
+
+        let info = SearchResultInfo {
+            best_move: best_ptn,
+            score: result.score,
+            depth: result.depth,
+            nodes: result.nodes as u32,
+            pv: pv_ptn,
+            tt_hits: result.tt_hits as u32,
+        };
+
+        serde_wasm_bindgen::to_value(&info).map_err(|e| JsError::new(&e.to_string()))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchResultInfo {
+    best_move: String,
+    score: i32,
+    depth: u8,
+    nodes: u32,
+    pv: Vec<String>,
+    tt_hits: u32,
 }
 
 #[derive(Serialize, Deserialize)]

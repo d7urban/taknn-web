@@ -1,7 +1,7 @@
 "use client";
 
 import { MoveInfo, GameInfo, PieceInfo } from "@/engine/wasm";
-import { SpreadState } from "@/app/page";
+import { SpreadState, SearchInfo } from "@/app/page";
 
 function PieceIcon({ piece, size = 18 }: { piece: PieceInfo; size?: number }) {
   const bg = piece.color === "white" ? "#f5f5f5" : "#333";
@@ -43,6 +43,9 @@ interface ControlsProps {
   onPieceClick: (pickupCount: number) => void;
   onConfirmSpread: () => void;
   onCancelSpread: () => void;
+  onBotMove: () => void;
+  botThinking: boolean;
+  lastSearchInfo: SearchInfo | null;
 }
 
 export default function Controls({
@@ -59,6 +62,9 @@ export default function Controls({
   onPieceClick,
   onConfirmSpread,
   onCancelSpread,
+  onBotMove,
+  botThinking,
+  lastSearchInfo,
 }: ControlsProps) {
   const carryLimit = gameInfo?.size ?? 8;
 
@@ -106,9 +112,43 @@ export default function Controls({
         ))}
       </div>
 
-      <button onClick={onUndo} style={{ padding: "4px 16px", marginBottom: 16 }}>
-        Undo
-      </button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button onClick={onUndo} style={{ padding: "4px 16px" }}>
+          Undo
+        </button>
+        <button
+          onClick={onBotMove}
+          disabled={botThinking}
+          style={{
+            padding: "4px 16px",
+            backgroundColor: botThinking ? "#ccc" : "#1976d2",
+            color: "white",
+            border: "none",
+            borderRadius: 3,
+            cursor: botThinking ? "wait" : "pointer",
+          }}
+        >
+          {botThinking ? "Thinking..." : "Bot Move"}
+        </button>
+      </div>
+
+      {lastSearchInfo && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: 6,
+            fontSize: 11,
+            backgroundColor: "#f0f0f0",
+            borderRadius: 3,
+            color: "#555",
+          }}
+        >
+          depth {lastSearchInfo.depth} | score {lastSearchInfo.score} | {lastSearchInfo.nodes.toLocaleString()} nodes
+          {lastSearchInfo.pv.length > 0 && (
+            <span> | PV: {lastSearchInfo.pv.slice(0, 5).join(" ")}</span>
+          )}
+        </div>
+      )}
 
       {/* Spread in progress */}
       {spreadState && (

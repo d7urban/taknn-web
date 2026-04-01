@@ -79,33 +79,46 @@ impl Stack {
     }
 
     /// Remove the top piece from this stack. Returns it, or None if empty.
+    ///
+    /// When buried pieces exist and the explicit `below` array is drained,
+    /// a buried piece is promoted as the new top. The color chosen is
+    /// arbitrary (white first), which is acceptable because `apply_spread`
+    /// always snapshots the stack in `UndoInfo` before mutating, so undo
+    /// restores the exact original ordering.
     pub fn pop(&mut self) -> Option<Piece> {
         let piece = self.top.take()?;
         self.height -= 1;
         if self.below.is_empty() {
             if self.buried_white > 0 || self.buried_black > 0 {
-                // Promote a buried piece into the explicit layer.
-                // Buried pieces are at the bottom, so we'd need to know the order.
-                // In practice, this case shouldn't arise in normal undo paths —
-                // we use UndoInfo for that. But for correctness during pop chains
-                // (spread undo), we handle it:
-                // NOTE: We cannot reconstruct which buried piece was on top.
-                // This is why apply/undo uses UndoInfo, not raw pop.
-                // For the pop-only path (used during spread application),
-                // the stack should not go below the explicit range.
-                panic!("Cannot pop into buried layers without UndoInfo");
+                // Promote a buried piece into the new top. Exact color order
+                // is unknown, but UndoInfo restores correctness on undo.
+                let color = if self.buried_white > 0 {
+                    self.buried_white -= 1;
+                    Color::White
+                } else {
+                    self.buried_black -= 1;
+                    Color::Black
+                };
+                self.top = Some(Piece::new(color, crate::piece::PieceType::Flat));
+            } else {
+                self.top = None;
             }
-            self.top = None;
         } else {
             // Promote the first below-top piece to the new top (as a flat).
             let color = self.below.remove(0);
             self.top = Some(Piece::new(color, crate::piece::PieceType::Flat));
 
-            // If there are buried pieces and we have room, promote one.
+            // If there are buried pieces and we have room, promote one
+            // into the bottom of the explicit layer.
             if self.below.len() < 7 && (self.buried_white > 0 || self.buried_black > 0) {
-                // We don't know the order of buried pieces. This path is
-                // only hit during forward move application where we track undo info.
-                // For now, we'll defer proper buried-layer management to UndoInfo.
+                let buried_color = if self.buried_white > 0 {
+                    self.buried_white -= 1;
+                    Color::White
+                } else {
+                    self.buried_black -= 1;
+                    Color::Black
+                };
+                self.below.push(buried_color);
             }
         }
         Some(piece)

@@ -16,6 +16,7 @@ type TakGame = {
   getBoard(): SquareInfo[];
   legalMoves(): MoveInfo[];
   getInfo(): GameInfo;
+  getTps(): string;
   applyMoveIndex(index: number): void;
   applyMovePtn(ptn: string): void;
   undo(): boolean;
@@ -27,6 +28,15 @@ type WasmModule = {
   TakGame: {
     new(size: number): TakGame;
   };
+};
+
+export type SearchInfo = {
+  bestMove: string;
+  score: number;
+  depth: number;
+  nodes: number;
+  pv: string[];
+  ttHits: number;
 };
 
 export type SpreadState = {
@@ -91,6 +101,11 @@ export default function Home() {
   const [selectedSquare, setSelectedSquare] = useState<number | null>(null);
   const [spreadState, setSpreadState] = useState<SpreadState | null>(null);
 
+  // Bot state.
+  const [botThinking, setBotThinking] = useState(false);
+  const [lastSearchInfo, setLastSearchInfo] = useState<SearchInfo | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+
   const resetInteraction = useCallback(() => {
     setSelectedSquare(null);
     setSpreadState(null);
@@ -102,6 +117,42 @@ export default function Home() {
       setWasm(mod as unknown as WasmModule);
       setLoading(false);
     });
+  }, []);
+
+  // Initialize Web Worker.
+  useEffect(() => {
+    const worker = new Worker(
+      new URL("../engine/worker.ts", import.meta.url)
+    );
+    worker.onmessage = (e: MessageEvent) => {
+      const msg = e.data;
+      setBotThinking(false);
+      if (msg.type === "result") {
+        setLastSearchInfo(msg.searchResult);
+        // The worker applied the move on its copy. We need to apply it on ours.
+        // Use the PTN from the search result to apply on our game instance.
+        const game = gameRef.current;
+        if (game && msg.searchResult?.bestMove) {
+          try {
+            game.applyMovePtn(msg.searchResult.bestMove);
+            // Refresh from our authoritative game state.
+            setSquares(game.getBoard());
+            setGameInfo(game.getInfo());
+            if (!game.isGameOver()) {
+              setLegalMoves(game.legalMoves());
+            } else {
+              setLegalMoves([]);
+            }
+          } catch (err) {
+            console.error("Failed to apply bot move:", err);
+          }
+        }
+      } else if (msg.type === "error") {
+        console.error("Worker error:", msg.message);
+      }
+    };
+    workerRef.current = worker;
+    return () => worker.terminate();
   }, []);
 
   const refreshState = useCallback(() => {
@@ -156,6 +207,16 @@ export default function Home() {
     game.undo();
     refreshState();
   }, [refreshState]);
+
+  const handleBotMove = useCallback(() => {
+    const game = gameRef.current;
+    const worker = workerRef.current;
+    if (!game || !worker || game.isGameOver() || botThinking) return;
+    const tps = game.getTps();
+    setBotThinking(true);
+    resetInteraction();
+    worker.postMessage({ type: "search", tps, maxDepth: 20, timeMs: 3000 });
+  }, [botThinking, resetInteraction]);
 
   // Escape key cancels interaction.
   useEffect(() => {
@@ -361,6 +422,9 @@ export default function Home() {
           onPieceClick={handlePieceClick}
           onConfirmSpread={handleConfirmSpread}
           onCancelSpread={resetInteraction}
+          onBotMove={handleBotMove}
+          botThinking={botThinking}
+          lastSearchInfo={lastSearchInfo}
         />
       </div>
     </main>
