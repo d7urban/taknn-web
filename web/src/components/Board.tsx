@@ -6,10 +6,22 @@ interface BoardProps {
   squares: SquareInfo[];
   size: number;
   selectedSquare: number | null;
+  highlights: Map<number, "source" | "drop" | "valid">;
   onSquareClick: (index: number) => void;
 }
 
-export default function Board({ squares, size, selectedSquare, onSquareClick }: BoardProps) {
+function highlightBorder(
+  isSelected: boolean,
+  highlight: "source" | "drop" | "valid" | undefined
+): string {
+  if (isSelected) return "3px solid #2196f3";
+  if (highlight === "source") return "3px solid #2196f3";
+  if (highlight === "drop") return "3px solid #ff9800";
+  if (highlight === "valid") return "3px dashed #4caf50";
+  return "1px solid #8b7355";
+}
+
+export default function Board({ squares, size, selectedSquare, highlights, onSquareClick }: BoardProps) {
   // Render rows from top (row size-1) to bottom (row 0) visually.
   const rows = [];
   for (let r = size - 1; r >= 0; r--) {
@@ -19,6 +31,7 @@ export default function Board({ squares, size, selectedSquare, onSquareClick }: 
       const sq = squares[idx];
       if (!sq) continue;
       const isSelected = selectedSquare === idx;
+      const highlight = highlights.get(idx);
       const topPiece = sq.pieces.length > 0 ? sq.pieces[sq.pieces.length - 1] : null;
       const stackHeight = sq.pieces.length;
 
@@ -29,7 +42,7 @@ export default function Board({ squares, size, selectedSquare, onSquareClick }: 
           style={{
             width: 64,
             height: 64,
-            border: isSelected ? "3px solid #2196f3" : "1px solid #8b7355",
+            border: highlightBorder(isSelected, highlight),
             backgroundColor: (r + c) % 2 === 0 ? "#f5e6c8" : "#e8d5a8",
             display: "flex",
             alignItems: "center",
@@ -40,6 +53,19 @@ export default function Board({ squares, size, selectedSquare, onSquareClick }: 
           }}
         >
           {topPiece && <PieceView piece={topPiece} stackHeight={stackHeight} />}
+          {highlight === "drop" && (
+            <span
+              style={{
+                position: "absolute",
+                top: 1,
+                right: 2,
+                fontSize: 9,
+                color: "#ff9800",
+                fontWeight: "bold",
+              }}
+            >
+            </span>
+          )}
           <span
             style={{
               position: "absolute",

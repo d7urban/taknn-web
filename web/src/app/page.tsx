@@ -8,6 +8,7 @@ import {
   SquareInfo,
   MoveInfo,
   GameInfo,
+  PieceInfo,
 } from "@/engine/wasm";
 
 // TakGame class from WASM.
@@ -28,15 +29,72 @@ type WasmModule = {
   };
 };
 
+export type SpreadState = {
+  sourceIdx: number;
+  sourceLabel: string;
+  pickupCount: number;
+  direction: string | null;
+  drops: number[];
+  piecesRemaining: number;
+  carriedPieces: PieceInfo[];
+};
+
+function idxToLabel(idx: number): string {
+  return String.fromCharCode(97 + (idx % 8)) + (Math.floor(idx / 8) + 1);
+}
+
+function directionFromIdxs(srcIdx: number, dstIdx: number): string | null {
+  const srcCol = srcIdx % 8;
+  const srcRow = Math.floor(srcIdx / 8);
+  const dstCol = dstIdx % 8;
+  const dstRow = Math.floor(dstIdx / 8);
+  if (dstCol === srcCol && dstRow > srcRow) return "+";
+  if (dstCol === srcCol && dstRow < srcRow) return "-";
+  if (dstRow === srcRow && dstCol > srcCol) return ">";
+  if (dstRow === srcRow && dstCol < srcCol) return "<";
+  return null;
+}
+
+function adjacentIdx(idx: number, dir: string, boardSize: number): number | null {
+  const col = idx % 8;
+  const row = Math.floor(idx / 8);
+  let nr = row, nc = col;
+  if (dir === "+") nr++;
+  else if (dir === "-") nr--;
+  else if (dir === ">") nc++;
+  else if (dir === "<") nc--;
+  if (nr < 0 || nr >= boardSize || nc < 0 || nc >= boardSize) return null;
+  return nr * 8 + nc;
+}
+
+function buildSpreadPtn(spread: SpreadState): string {
+  let ptn = "";
+  if (spread.pickupCount > 1) ptn += spread.pickupCount.toString();
+  ptn += spread.sourceLabel;
+  ptn += spread.direction;
+  if (spread.drops.length > 1 || (spread.drops.length === 1 && spread.drops[0] !== spread.pickupCount)) {
+    ptn += spread.drops.map((d) => d.toString()).join("");
+  }
+  return ptn;
+}
+
 export default function Home() {
   const [wasm, setWasm] = useState<WasmModule | null>(null);
   const gameRef = useRef<TakGame | null>(null);
   const [squares, setSquares] = useState<SquareInfo[]>([]);
   const [legalMoves, setLegalMoves] = useState<MoveInfo[]>([]);
   const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
-  const [selectedSquare, setSelectedSquare] = useState<number | null>(null);
   const [placementType, setPlacementType] = useState<"flat" | "wall" | "cap">("flat");
   const [loading, setLoading] = useState(true);
+
+  // Interaction state: idle, stackSelected (clicked a stack), or spreading (building a spread move).
+  const [selectedSquare, setSelectedSquare] = useState<number | null>(null);
+  const [spreadState, setSpreadState] = useState<SpreadState | null>(null);
+
+  const resetInteraction = useCallback(() => {
+    setSelectedSquare(null);
+    setSpreadState(null);
+  }, []);
 
   // Initialize WASM.
   useEffect(() => {
@@ -56,8 +114,8 @@ export default function Home() {
     } else {
       setLegalMoves([]);
     }
-    setSelectedSquare(null);
-  }, []);
+    resetInteraction();
+  }, [resetInteraction]);
 
   // Start a new game.
   const startGame = useCallback(
@@ -99,74 +157,182 @@ export default function Home() {
     refreshState();
   }, [refreshState]);
 
+  // Escape key cancels interaction.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") resetInteraction();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [resetInteraction]);
+
+  // Called from Controls when user clicks a piece in the stack to set pickup count.
+  const handlePieceClick = useCallback(
+    (pickupCount: number) => {
+      if (selectedSquare === null) return;
+      const sq = squares[selectedSquare];
+      if (!sq || sq.pieces.length === 0) return;
+      const carried = sq.pieces.slice(sq.pieces.length - pickupCount);
+      setSpreadState({
+        sourceIdx: selectedSquare,
+        sourceLabel: idxToLabel(selectedSquare),
+        pickupCount,
+        direction: null,
+        drops: [],
+        piecesRemaining: pickupCount,
+        carriedPieces: carried,
+      });
+    },
+    [selectedSquare, squares]
+  );
+
+  // Called from Controls to confirm a completed spread.
+  const handleConfirmSpread = useCallback(() => {
+    if (!spreadState || spreadState.piecesRemaining > 0 || !spreadState.direction) return;
+    const ptn = buildSpreadPtn(spreadState);
+    const move = legalMoves.find((m) => m.ptn === ptn);
+    if (move) {
+      handleMoveSelect(move.index);
+    } else {
+      console.error("Spread move not legal:", ptn);
+      resetInteraction();
+    }
+  }, [spreadState, legalMoves, handleMoveSelect, resetInteraction]);
+
   const handleSquareClick = useCallback(
     (idx: number) => {
       const game = gameRef.current;
       if (!game || game.isGameOver()) return;
-
-      // Try to find a matching move.
+      const boardSize = gameInfo?.size ?? 6;
       const moves = legalMoves;
 
-      // If clicking the same square, deselect.
-      if (selectedSquare === idx) {
-        setSelectedSquare(null);
-        return;
-      }
-
-      // If no square selected yet, check if this is a placement target or a spread source.
-      if (selectedSquare === null) {
-        // Check for placement at this square.
-        const ptnPrefix = placementType === "flat" ? "" : placementType === "wall" ? "S" : "C";
-        const col = idx % 8;
-        const row = Math.floor(idx / 8);
-        const sqStr = String.fromCharCode(97 + col) + (row + 1);
-        const placePtn = ptnPrefix + sqStr;
-
-        const placeMove = moves.find((m) => m.ptn === placePtn);
-        if (placeMove) {
-          handleMoveSelect(placeMove.index);
+      // --- Spreading mode: user is building a multi-step spread ---
+      if (spreadState) {
+        // Direction not yet chosen: must click an adjacent square.
+        if (!spreadState.direction) {
+          const dir = directionFromIdxs(spreadState.sourceIdx, idx);
+          if (!dir) return; // ignore non-adjacent clicks
+          // Must be exactly 1 square away.
+          const expected = adjacentIdx(spreadState.sourceIdx, dir, boardSize);
+          if (expected !== idx) return;
+          setSpreadState({
+            ...spreadState,
+            direction: dir,
+            drops: [1],
+            piecesRemaining: spreadState.pickupCount - 1,
+          });
           return;
         }
 
-        // Check if there's a spread from this square.
-        const hasSpread = moves.some(
-          (m) => m.ptn.includes(sqStr) && (m.ptn.includes("+") || m.ptn.includes("-") || m.ptn.includes(">") || m.ptn.includes("<"))
-        );
-        if (hasSpread) {
-          setSelectedSquare(idx);
-        }
-      } else {
-        // Second click: find a spread from selectedSquare to this square.
-        const srcCol = selectedSquare % 8;
-        const srcRow = Math.floor(selectedSquare / 8);
-        const srcStr = String.fromCharCode(97 + srcCol) + (srcRow + 1);
-        const dstCol = idx % 8;
-        const dstRow = Math.floor(idx / 8);
+        // Direction is set. User can:
+        // 1. Click the "next" square in line to drop 1 there.
+        // 2. Click the current last-drop square to add 1 more to it.
 
-        let dir = "";
-        if (dstRow > srcRow && dstCol === srcCol) dir = "+";
-        else if (dstRow < srcRow && dstCol === srcCol) dir = "-";
-        else if (dstCol > srcCol && dstRow === srcRow) dir = ">";
-        else if (dstCol < srcCol && dstRow === srcRow) dir = "<";
+        if (spreadState.piecesRemaining <= 0) return; // already done, wait for confirm
 
-        if (dir) {
-          // Find the simplest spread (pickup 1, drop on first square).
-          const spreadPtn = srcStr + dir;
-          const spreadMove = moves.find((m) => m.ptn === spreadPtn);
-          if (spreadMove) {
-            handleMoveSelect(spreadMove.index);
-            return;
-          }
+        // Compute the current "head" position (the last square we dropped on).
+        let headIdx = spreadState.sourceIdx;
+        for (let i = 0; i < spreadState.drops.length; i++) {
+          const next = adjacentIdx(headIdx, spreadState.direction, boardSize);
+          if (next === null) break;
+          headIdx = next;
         }
-        setSelectedSquare(null);
+
+        // Compute the next square beyond the head.
+        const nextIdx = adjacentIdx(headIdx, spreadState.direction, boardSize);
+
+        if (idx === headIdx) {
+          // Add 1 more piece to the current square.
+          const newDrops = [...spreadState.drops];
+          newDrops[newDrops.length - 1]++;
+          setSpreadState({
+            ...spreadState,
+            drops: newDrops,
+            piecesRemaining: spreadState.piecesRemaining - 1,
+          });
+        } else if (nextIdx !== null && idx === nextIdx) {
+          // Drop 1 on the next square in line.
+          setSpreadState({
+            ...spreadState,
+            drops: [...spreadState.drops, 1],
+            piecesRemaining: spreadState.piecesRemaining - 1,
+          });
+        }
+        // Ignore any other clicks.
+        return;
+      }
+
+      // --- Stack selected mode: user clicked a stack, hasn't picked up yet ---
+      if (selectedSquare !== null) {
+        // Click same square to deselect.
+        if (idx === selectedSquare) {
+          resetInteraction();
+          return;
+        }
+        // Click a different square: deselect and fall through to idle logic.
+        resetInteraction();
+      }
+
+      // --- Idle mode ---
+      // Try placement first.
+      const ptnPrefix = placementType === "flat" ? "" : placementType === "wall" ? "S" : "C";
+      const sqStr = idxToLabel(idx);
+      const placePtn = ptnPrefix + sqStr;
+      const placeMove = moves.find((m) => m.ptn === placePtn);
+      if (placeMove) {
+        handleMoveSelect(placeMove.index);
+        return;
+      }
+
+      // Check if this square has spread moves available.
+      const hasSpread = moves.some(
+        (m) => m.ptn.includes(sqStr) && /[+\-><]/.test(m.ptn)
+      );
+      if (hasSpread) {
+        setSelectedSquare(idx);
       }
     },
-    [selectedSquare, legalMoves, placementType, handleMoveSelect]
+    [selectedSquare, spreadState, legalMoves, placementType, gameInfo, handleMoveSelect, resetInteraction]
   );
+
+  // Compute highlight set for the board.
+  const highlights = new Map<number, "source" | "drop" | "valid">();
+  if (spreadState) {
+    const boardSize = gameInfo?.size ?? 6;
+    highlights.set(spreadState.sourceIdx, "source");
+
+    if (spreadState.direction) {
+      // Mark squares that already received drops.
+      let cur = spreadState.sourceIdx;
+      for (let i = 0; i < spreadState.drops.length; i++) {
+        const next = adjacentIdx(cur, spreadState.direction, boardSize);
+        if (next === null) break;
+        highlights.set(next, "drop");
+        cur = next;
+      }
+      // Mark valid next targets.
+      if (spreadState.piecesRemaining > 0) {
+        highlights.set(cur, "valid"); // current head (click to add more)
+        const nextInLine = adjacentIdx(cur, spreadState.direction, boardSize);
+        if (nextInLine !== null) highlights.set(nextInLine, "valid");
+      }
+    } else {
+      // No direction yet: highlight all valid adjacent squares.
+      for (const dir of ["+", "-", ">", "<"]) {
+        const adj = adjacentIdx(spreadState.sourceIdx, dir, boardSize);
+        if (adj !== null) highlights.set(adj, "valid");
+      }
+    }
+  }
 
   if (loading) {
     return <div style={{ padding: 40, fontSize: 18 }}>Loading Tak engine...</div>;
   }
+
+  const selectedStack =
+    selectedSquare !== null && squares[selectedSquare]
+      ? squares[selectedSquare].pieces
+      : null;
 
   return (
     <main style={{ padding: 24 }}>
@@ -175,7 +341,8 @@ export default function Home() {
         <Board
           squares={squares}
           size={gameInfo?.size ?? 6}
-          selectedSquare={selectedSquare}
+          selectedSquare={spreadState ? spreadState.sourceIdx : selectedSquare}
+          highlights={highlights}
           onSquareClick={handleSquareClick}
         />
         <Controls
@@ -186,6 +353,14 @@ export default function Home() {
           onUndo={handleUndo}
           placementType={placementType}
           onPlacementTypeChange={setPlacementType}
+          selectedStack={selectedStack}
+          selectedSquareLabel={
+            selectedSquare !== null ? idxToLabel(selectedSquare) : null
+          }
+          spreadState={spreadState}
+          onPieceClick={handlePieceClick}
+          onConfirmSpread={handleConfirmSpread}
+          onCancelSpread={resetInteraction}
         />
       </div>
     </main>
