@@ -198,6 +198,9 @@ impl<E: Evaluator> PvsSearch<E> {
         alpha
     }
 
+    /// Maximum recursion depth (ply) to prevent stack overflow, especially in WASM.
+    const MAX_PLY: usize = 64;
+
     /// Recursive PVS.
     fn pvs(
         &mut self,
@@ -209,6 +212,11 @@ impl<E: Evaluator> PvsSearch<E> {
         pv: &mut Vec<Move>,
     ) -> Score {
         self.nodes += 1;
+
+        // Hard ply limit to prevent stack overflow.
+        if ply >= Self::MAX_PLY {
+            return self.eval.evaluate(state);
+        }
 
         // Periodic time check.
         if self.nodes % 4096 == 0 && self.timer.should_stop() {

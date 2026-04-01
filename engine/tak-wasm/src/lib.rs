@@ -11,6 +11,12 @@ use tak_core::state::{GameResult, GameState};
 use tak_core::tps;
 use tak_core::ptn;
 
+/// Install panic hook so WASM panics produce readable console errors.
+#[wasm_bindgen(start)]
+pub fn init() {
+    console_error_panic_hook::set_once();
+}
+
 // ---------------------------------------------------------------------------
 // JS-facing game wrapper
 // ---------------------------------------------------------------------------
@@ -251,7 +257,7 @@ impl TakGame {
         let config = SearchConfig {
             max_depth,
             max_time_ms: time_ms as u64,
-            tt_size_mb: 16,
+            tt_size_mb: 4,
         };
         let mut search = PvsSearch::new(config, HeuristicEval);
         let result = search.search(&mut self.state);
@@ -284,7 +290,7 @@ impl TakGame {
         let config = SearchConfig {
             max_depth,
             max_time_ms: time_ms as u64,
-            tt_size_mb: 16,
+            tt_size_mb: 4,
         };
         let mut search = PvsSearch::new(config, HeuristicEval);
         let result = search.search(&mut self.state);

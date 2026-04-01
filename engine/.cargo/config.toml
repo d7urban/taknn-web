@@ -1,0 +1,4 @@
+# Increase WASM stack size from the default (~1MB) to 5MB.
+# The PVS search is recursive and needs sufficient stack for deep search trees.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-args=-z stack-size=5242880"]
