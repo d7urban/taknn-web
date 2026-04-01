@@ -8,3 +8,6 @@ tak-core = { path = "../tak-core" }
 arrayvec = { workspace = true }
 rand = { workspace = true }
 rand_xoshiro = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"

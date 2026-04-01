@@ -221,6 +221,10 @@ function __wbg_get_imports() {
             const ret = new Object();
             return ret;
         },
+        __wbg_now_cd850b0a28a6e656: function() {
+            const ret = Date.now();
+            return ret;
+        },
         __wbg_set_6be42768c690e380: function(arg0, arg1, arg2) {
             arg0[arg1] = arg2;
         },

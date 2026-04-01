@@ -1,9 +1,16 @@
 //! Time management for iterative deepening search.
+//!
+//! On native targets, uses `std::time::Instant`.
+//! On WASM (`wasm32`), uses `js_sys::Date::now()` since `Instant` is
+//! unsupported on `wasm32-unknown-unknown`.
 
 /// Simple time manager: stops search when allocated time is exhausted.
 pub struct TimeManager {
     max_time_ms: u64,
+    #[cfg(not(target_arch = "wasm32"))]
     start: Option<std::time::Instant>,
+    #[cfg(target_arch = "wasm32")]
+    start_ms: Option<f64>,
     hard_stop: bool,
 }
 
@@ -11,15 +18,41 @@ impl TimeManager {
     pub fn new(max_time_ms: u64) -> Self {
         TimeManager {
             max_time_ms,
+            #[cfg(not(target_arch = "wasm32"))]
             start: None,
+            #[cfg(target_arch = "wasm32")]
+            start_ms: None,
             hard_stop: false,
         }
     }
 
     /// Call at the start of search.
     pub fn start(&mut self) {
-        self.start = Some(std::time::Instant::now());
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.start = Some(std::time::Instant::now());
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.start_ms = Some(js_sys::Date::now());
+        }
         self.hard_stop = false;
+    }
+
+    /// Elapsed milliseconds since start.
+    pub fn elapsed_ms(&self) -> u64 {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.start
+                .map(|s| s.elapsed().as_millis() as u64)
+                .unwrap_or(0)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            self.start_ms
+                .map(|s| (js_sys::Date::now() - s) as u64)
+                .unwrap_or(0)
+        }
     }
 
     /// Check if time is up. Call periodically during search.
@@ -27,18 +60,7 @@ impl TimeManager {
         if self.hard_stop {
             return true;
         }
-        if let Some(start) = self.start {
-            start.elapsed().as_millis() as u64 >= self.max_time_ms
-        } else {
-            false
-        }
-    }
-
-    /// Elapsed milliseconds since start.
-    pub fn elapsed_ms(&self) -> u64 {
-        self.start
-            .map(|s| s.elapsed().as_millis() as u64)
-            .unwrap_or(0)
+        self.elapsed_ms() >= self.max_time_ms
     }
 
     /// Force stop.
@@ -49,38 +71,7 @@ impl TimeManager {
     /// Check if we have enough time for another iteration.
     /// Heuristic: if we've used more than 60% of the time, don't start a new depth.
     pub fn can_start_new_depth(&self) -> bool {
-        if let Some(start) = self.start {
-            let elapsed = start.elapsed().as_millis() as u64;
-            elapsed < self.max_time_ms * 60 / 100
-        } else {
-            true
-        }
-    }
-}
-
-/// WASM-compatible time manager using f64 millis (no std::time::Instant in WASM).
-#[cfg(target_arch = "wasm32")]
-pub struct WasmTimeManager {
-    max_time_ms: f64,
-    start_ms: f64,
-    hard_stop: bool,
-}
-
-#[cfg(target_arch = "wasm32")]
-impl WasmTimeManager {
-    pub fn new(max_time_ms: f64, now_ms: f64) -> Self {
-        WasmTimeManager {
-            max_time_ms,
-            start_ms: now_ms,
-            hard_stop: false,
-        }
-    }
-
-    pub fn should_stop(&self, now_ms: f64) -> bool {
-        self.hard_stop || (now_ms - self.start_ms) >= self.max_time_ms
-    }
-
-    pub fn stop(&mut self) {
-        self.hard_stop = true;
+        let elapsed = self.elapsed_ms();
+        elapsed < self.max_time_ms * 60 / 100
     }
 }

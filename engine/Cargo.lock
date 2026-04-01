@@ -185,6 +185,7 @@ name = "tak-search"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "js-sys",
  "rand",
  "rand_xoshiro",
  "tak-core",
