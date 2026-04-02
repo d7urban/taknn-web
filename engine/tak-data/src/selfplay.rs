@@ -52,15 +52,17 @@ impl SelfPlayEngine {
                 self.config.temp_schedule.cool_temp
             };
 
-            let moves = state.legal_moves();
-            if moves.is_empty() { break; }
+            // Single search call gives us scores for ALL root moves.
+            let result = search.search(&mut state);
+            if result.root_scores.is_empty() { break; }
 
-            let mut move_scores = Vec::with_capacity(moves.len());
-            for &mv in &moves {
-                let undo = state.apply_move(mv);
-                let result = search.search(&mut state);
-                move_scores.push(-result.score);
-                state.undo_move(mv, &undo);
+            let moves = state.legal_moves();
+            // Map root_scores back to move-index order.
+            let mut move_scores = vec![0i32; moves.len()];
+            for rs in &result.root_scores {
+                if let Some(idx) = moves.iter().position(|&m| m == rs.mv) {
+                    move_scores[idx] = rs.score;
+                }
             }
 
             let policy = softmax(&move_scores, temp);
@@ -70,7 +72,7 @@ impl SelfPlayEngine {
             let tactical = TacticalFlags::compute(&state);
             let record_state = state.clone();
 
-            history.push((record_state, tactical, policy, search.config.max_depth, 0));
+            history.push((record_state, tactical, policy, result.depth, result.nodes as u32));
 
             state.apply_move(selected_move);
         }
@@ -147,30 +149,32 @@ mod tests {
             },
             temp_schedule: TemperatureSchedule::default(),
         };
-        let engine = SelfPlayEngine::new(config);
-        let _rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        
-        // Just play a few plies to verify record generation
+        let _engine = SelfPlayEngine::new(config);
+
+        // Verify that a single search returns root_scores for all moves.
         let mut state = GameState::new(GameConfig::standard(3));
-        let mut search = PvsSearch::new(engine.config.search_config, HeuristicEval);
-        
+        let mut search = PvsSearch::new(
+            SearchConfig { max_depth: 2, max_time_ms: 100, tt_size_mb: 1 },
+            HeuristicEval,
+        );
+
+        let result = search.search(&mut state);
         let moves = state.legal_moves();
-        let mut move_scores = Vec::with_capacity(moves.len());
-        for &mv in &moves {
-            let undo = state.apply_move(mv);
-            let result = search.search(&mut state);
-            move_scores.push(-result.score);
-            state.undo_move(mv, &undo);
-        }
+
+        assert!(result.best_move.is_some());
+        assert_eq!(result.root_scores.len(), moves.len(),
+            "root_scores should have one entry per legal move");
+
+        let move_scores: Vec<i32> = result.root_scores.iter().map(|rs| rs.score).collect();
         let policy = softmax(&move_scores, 1.0);
-        
+
         let mut sparse_policy = Vec::new();
         for (i, &p) in policy.iter().enumerate() {
             if p > 0.001 {
                 sparse_policy.push((i as u16, f16::from_f32(p)));
             }
         }
-        
+
         let record = TrainingRecord {
             board_size: 3,
             side_to_move: state.side_to_move,
@@ -180,8 +184,8 @@ mod tests {
             half_komi: state.config.half_komi,
             game_result: GameResult::Ongoing,
             flat_margin: 0,
-            search_depth: 1,
-            search_nodes: 0,
+            search_depth: result.depth,
+            search_nodes: result.nodes as u32,
             game_id: 1,
             source_model_id: 0,
             tactical_phase: tak_core::tactical::TacticalPhase::Quiet,
@@ -190,7 +194,7 @@ mod tests {
             policy_target: sparse_policy,
             board_data: TrainingRecord::pack_board(&state),
         };
-        
+
         assert_eq!(record.board_size, 3);
         assert!(!record.board_data.is_empty());
     }

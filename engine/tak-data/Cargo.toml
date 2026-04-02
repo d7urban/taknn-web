@@ -12,3 +12,9 @@ rand_xoshiro = { workspace = true }
 serde = { workspace = true }
 zstd = { workspace = true }
 half = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+rayon = "1.10"
+
+[[bin]]
+name = "selfplay"
+path = "src/bin/selfplay.rs"

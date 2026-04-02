@@ -34,6 +34,12 @@ impl Default for SearchConfig {
 // Result
 // ---------------------------------------------------------------------------
 
+/// Score assigned to a root move during the last completed iteration.
+pub struct RootMoveScore {
+    pub mv: Move,
+    pub score: Score,
+}
+
 pub struct SearchResult {
     pub best_move: Option<Move>,
     pub score: Score,
@@ -41,6 +47,8 @@ pub struct SearchResult {
     pub nodes: u64,
     pub pv: Vec<Move>,
     pub tt_hits: u64,
+    /// Scores for all root moves from the last completed ID iteration.
+    pub root_scores: Vec<RootMoveScore>,
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +101,7 @@ impl<E: Evaluator> PvsSearch<E> {
             nodes: 0,
             pv: Vec::new(),
             tt_hits: 0,
+            root_scores: Vec::new(),
         };
 
         // Get legal moves for root; if only one move, return it immediately.
@@ -114,7 +123,7 @@ impl<E: Evaluator> PvsSearch<E> {
             }
 
             pv.clear();
-            let score = self.pvs_root(state, depth, &mut pv);
+            let (score, root_scores) = self.pvs_root(state, depth, &mut pv);
 
             if self.stopped {
                 break;
@@ -125,6 +134,7 @@ impl<E: Evaluator> PvsSearch<E> {
             best_result.nodes = self.nodes;
             best_result.tt_hits = self.tt_hits;
             best_result.pv = pv.clone();
+            best_result.root_scores = root_scores;
             if !pv.is_empty() {
                 best_result.best_move = Some(pv[0]);
             }
@@ -139,10 +149,16 @@ impl<E: Evaluator> PvsSearch<E> {
     }
 
     /// Root-level PVS. Searches all root moves with special handling.
-    fn pvs_root(&mut self, state: &mut GameState, depth: u8, pv: &mut Vec<Move>) -> Score {
+    /// Returns `(best_score, per_move_scores)`.
+    fn pvs_root(
+        &mut self,
+        state: &mut GameState,
+        depth: u8,
+        pv: &mut Vec<Move>,
+    ) -> (Score, Vec<RootMoveScore>) {
         let moves = state.legal_moves();
         if moves.is_empty() {
-            return self.eval.evaluate(state);
+            return (self.eval.evaluate(state), Vec::new());
         }
 
         // Get TT move for ordering.
@@ -157,6 +173,7 @@ impl<E: Evaluator> PvsSearch<E> {
         let mut alpha = -SCORE_INF;
         let beta = SCORE_INF;
         let mut best_move = moves[scored[0].0];
+        let mut root_scores = Vec::with_capacity(moves.len());
 
         for (i, &(move_idx, _)) in scored.iter().enumerate() {
             let mv = moves[move_idx];
@@ -180,8 +197,10 @@ impl<E: Evaluator> PvsSearch<E> {
             state.undo_move(mv, &undo);
 
             if self.stopped {
-                return alpha;
+                return (alpha, root_scores);
             }
+
+            root_scores.push(RootMoveScore { mv, score });
 
             if score > alpha {
                 alpha = score;
@@ -196,7 +215,7 @@ impl<E: Evaluator> PvsSearch<E> {
         self.tt
             .store(state.zobrist, Some(best_move), alpha, depth, TTFlag::Exact);
 
-        alpha
+        (alpha, root_scores)
     }
 
     /// Maximum recursion depth (ply) to prevent stack overflow, especially in WASM.
