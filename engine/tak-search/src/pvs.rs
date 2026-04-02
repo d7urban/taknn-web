@@ -13,6 +13,7 @@ use crate::tt::{TTFlag, TranspositionTable};
 // Configuration
 // ---------------------------------------------------------------------------
 
+#[derive(Copy, Clone, Debug)]
 pub struct SearchConfig {
     pub max_depth: u8,
     pub max_time_ms: u64,

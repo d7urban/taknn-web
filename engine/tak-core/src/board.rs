@@ -196,6 +196,19 @@ impl Board {
         }
         count
     }
+
+    /// Apply D4 transform to the entire board.
+    pub fn transform(&self, sym: crate::symmetry::D4, size: u8) -> Self {
+        let mut new_board = Board::empty();
+        for r in 0..size {
+            for c in 0..size {
+                let old_sq = Square::from_rc(r, c);
+                let new_sq = sym.transform_square(old_sq, size);
+                new_board.squares[new_sq.0 as usize] = self.squares[old_sq.0 as usize].clone();
+            }
+        }
+        new_board
+    }
 }
 
 #[cfg(test)]

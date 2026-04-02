@@ -8,3 +8,7 @@ tak-core = { path = "../tak-core" }
 tak-search = { path = "../tak-search" }
 arrayvec = { workspace = true }
 rand = { workspace = true }
+rand_xoshiro = { workspace = true }
+serde = { workspace = true }
+zstd = { workspace = true }
+half = { workspace = true }

@@ -125,6 +125,17 @@ impl GameState {
         self.ply < 2
     }
 
+    /// Returns white_flats - black_flats + komi at game end.
+    pub fn flat_margin(&self) -> i16 {
+        let (white, black) = self.board.flat_counts(self.config.size);
+        let mut margin = white as i16 - black as i16;
+        margin += self.config.komi as i16;
+        // If half-komi is set, and it's a draw on whole points, it's effectively 0.5.
+        // We handle this by returning non-zero. For TrainingRecord we mostly need the sign
+        // and a rough magnitude.
+        margin
+    }
+
     /// Generate all legal moves for the current side to move.
     pub fn legal_moves(&self) -> MoveList {
         MoveGen::legal_moves(
@@ -1625,8 +1636,26 @@ mod tests {
             assert_eq!(state.reserves[3], config.capstones);
             assert_eq!(state.board.empty_count(size), (size as u32) * (size as u32));
             assert!(state.is_opening_phase());
+            assert_eq!(state.flat_margin(), 0); // initial margin is 0 (even with 0 komi)
             let _ = state.zobrist; // just check it doesn't panic
         }
+    }
+
+    #[test]
+    fn flat_margin_calculation() {
+        let mut state = GameState::new(GameConfig::standard(5));
+        state.ply = 2;
+        // 3 white flats, 1 black flat
+        state.board.get_mut(Square::from_rc(0, 0)).push(Piece::new(Color::White, PieceType::Flat));
+        state.board.get_mut(Square::from_rc(0, 1)).push(Piece::new(Color::White, PieceType::Flat));
+        state.board.get_mut(Square::from_rc(0, 2)).push(Piece::new(Color::White, PieceType::Flat));
+        state.board.get_mut(Square::from_rc(4, 4)).push(Piece::new(Color::Black, PieceType::Flat));
+        
+        assert_eq!(state.flat_margin(), 2);
+
+        // Add komi of 2
+        state.config.komi = 2;
+        assert_eq!(state.flat_margin(), 4);
     }
 
     // -----------------------------------------------------------------------

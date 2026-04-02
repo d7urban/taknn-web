@@ -7,3 +7,13 @@ web/.next/
 
 # wasm-pack output (rebuilt from source)
 engine/tak-wasm/pkg/
+
+# Python
+__pycache__/
+*.pyc
+*.so
+train/.venv/
+train/data/
+
+# Generated
+*.egg-info/
