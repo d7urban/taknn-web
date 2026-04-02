@@ -238,8 +238,8 @@ impl<E: Evaluator> PvsSearch<E> {
             return self.eval.evaluate(state);
         }
 
-        // Periodic time check.
-        if self.nodes.is_multiple_of(4096) && self.timer.should_stop() {
+        // Periodic time check (every 128 nodes for responsive time control).
+        if self.nodes & 127 == 0 && self.timer.should_stop() {
             self.stopped = true;
             return 0;
         }
@@ -420,6 +420,12 @@ impl<E: Evaluator> PvsSearch<E> {
         const MAX_QS_DEPTH: usize = 4;
 
         self.nodes += 1;
+
+        // Time check in quiescence (every 256 nodes).
+        if self.nodes & 255 == 0 && self.timer.should_stop() {
+            self.stopped = true;
+            return alpha;
+        }
 
         // Terminal check.
         match state.result {

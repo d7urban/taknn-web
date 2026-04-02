@@ -7,7 +7,8 @@ use tak_core::tactical::TacticalFlags;
 use tak_core::tps;
 use tak_data::shard::{ShardReader, ShardWriter};
 use tak_data::selfplay::{SelfPlayConfig, SelfPlayEngine, TemperatureSchedule};
-use tak_search::pvs::SearchConfig;
+use tak_search::pvs::{PvsSearch, SearchConfig};
+use tak_search::eval::HeuristicEval;
 use numpy::PyArray3;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
@@ -106,6 +107,38 @@ impl PyGameState {
             py,
             &tensor_to_vec3(&tensor.data),
         )?)
+    }
+
+    /// Run PVS search with heuristic eval. Returns (best_move_index, score, depth, nodes).
+    #[pyo3(signature = (max_depth=20, max_time_ms=1000, tt_size_mb=16))]
+    fn search_move(&mut self, max_depth: u8, max_time_ms: u64, tt_size_mb: usize) -> PyResult<(usize, i32, u8, u64)> {
+        let config = SearchConfig { max_depth, max_time_ms, tt_size_mb };
+        let mut search = PvsSearch::new(config, HeuristicEval);
+        let result = search.search(&mut self.inner);
+        let moves = self.inner.legal_moves();
+        if moves.is_empty() {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err("No legal moves"));
+        }
+        let move_idx = match result.best_move {
+            Some(best_move) => moves.iter().position(|&m| m == best_move).unwrap_or(0),
+            None => 0, // fallback to first legal move
+        };
+        Ok((move_idx, result.score, result.depth, result.nodes))
+    }
+
+    /// Encode board tensors for all positions after each legal move.
+    /// Returns list of [31, 8, 8] numpy arrays (one per legal move).
+    fn encode_children_tensors<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyArray3<f32>>>> {
+        let moves = self.inner.legal_moves();
+        let mut arrays = Vec::with_capacity(moves.len());
+        for &mv in &moves {
+            let mut child = self.inner.clone();
+            child.apply_move(mv);
+            let tensor = tak_core::tensor::BoardTensor::encode(&child);
+            let arr = PyArray3::from_vec3(py, &tensor_to_vec3(&tensor.data))?;
+            arrays.push(arr);
+        }
+        Ok(arrays)
     }
 
     /// Returns a dict of tactical labels for the current position.

@@ -4,7 +4,7 @@ use tak_core::state::{GameResult, GameState};
 use tak_core::rules::GameConfig;
 use tak_core::tactical::TacticalFlags;
 use tak_search::pvs::{PvsSearch, SearchConfig};
-use tak_search::eval::HeuristicEval;
+use tak_search::eval::{HeuristicEval, SCORE_MATE, SCORE_FLAT_WIN};
 use crate::shard::TrainingRecord;
 
 #[derive(Clone, Debug)]
@@ -71,8 +71,9 @@ impl SelfPlayEngine {
 
             let tactical = TacticalFlags::compute(&state);
             let record_state = state.clone();
+            let search_score = result.score;
 
-            history.push((record_state, tactical, policy, result.depth, result.nodes as u32));
+            history.push((record_state, tactical, policy, result.depth, result.nodes as u32, search_score));
 
             state.apply_move(selected_move);
         }
@@ -80,13 +81,19 @@ impl SelfPlayEngine {
         let final_result = state.result;
         let final_margin = state.flat_margin();
 
-        history.into_iter().map(|(s, t, policy, depth, nodes)| {
+        history.into_iter().map(|(s, t, policy, depth, nodes, search_score)| {
             let mut sparse_policy = Vec::new();
             for (i, &p) in policy.iter().enumerate() {
                 if p > 0.001 {
                     sparse_policy.push((i as u16, f16::from_f32(p)));
                 }
             }
+
+            // Derive teacher WDL from search score (STM perspective).
+            // Convert centipawn-like score to win probability using a logistic curve.
+            let teacher_wdl = score_to_wdl(search_score);
+            // Normalize margin to [-1, 1] range.
+            let teacher_margin = (search_score as f32 / 500.0).clamp(-1.0, 1.0);
 
             TrainingRecord {
                 board_size: s.config.size,
@@ -102,12 +109,45 @@ impl SelfPlayEngine {
                 game_id,
                 source_model_id: 0,
                 tactical_phase: t.phase(),
-                teacher_wdl: [f16::from_f32(0.33); 3],
-                teacher_margin: 0.0,
+                teacher_wdl,
+                teacher_margin,
                 policy_target: sparse_policy,
                 board_data: TrainingRecord::pack_board(&s),
             }
         }).collect()
+    }
+}
+
+/// Convert a search score to WDL probabilities from STM perspective.
+/// Uses a logistic curve for normal scores, hard 1/0 for mate scores.
+fn score_to_wdl(score: i32) -> [f16; 3] {
+    if score.abs() >= SCORE_MATE - 100 {
+        // Forced road win/loss
+        if score > 0 {
+            [f16::from_f32(1.0), f16::from_f32(0.0), f16::from_f32(0.0)]
+        } else {
+            [f16::from_f32(0.0), f16::from_f32(0.0), f16::from_f32(1.0)]
+        }
+    } else if score.abs() >= SCORE_FLAT_WIN - 100 {
+        // Flat win/loss (slightly less certain)
+        if score > 0 {
+            [f16::from_f32(0.9), f16::from_f32(0.1), f16::from_f32(0.0)]
+        } else {
+            [f16::from_f32(0.0), f16::from_f32(0.1), f16::from_f32(0.9)]
+        }
+    } else {
+        // Normal score: logistic curve, with draw mass
+        // win_prob = sigmoid(score / 150), loss_prob = 1 - win_prob
+        // Then allocate draw probability based on how close to 0
+        let s = score as f64 / 150.0;
+        let win_raw = 1.0 / (1.0 + (-s).exp());
+        let loss_raw = 1.0 - win_raw;
+        // Draw probability peaks near 0, decays with |score|
+        let draw = (0.3 * (-s * s / 2.0).exp()).max(0.01);
+        let non_draw = 1.0 - draw;
+        let win = (non_draw * win_raw) as f32;
+        let loss = (non_draw * loss_raw) as f32;
+        [f16::from_f32(win), f16::from_f32(draw as f32), f16::from_f32(loss)]
     }
 }
 
