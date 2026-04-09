@@ -133,7 +133,7 @@ impl TacticalFlags {
     /// current position. We generate all legal moves for `color` (as if it
     /// were that color's turn), apply each one to a clone, and check for a
     /// road by that color.
-    fn has_road_in_1(state: &GameState, color: Color) -> bool {
+    pub fn has_road_in_1(state: &GameState, color: Color) -> bool {
         let moves = MoveGen::legal_moves_for(
             &state.board,
             &state.config,
@@ -215,6 +215,191 @@ impl TacticalFlags {
         }
 
         false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SpatialLabels — per-square labels for auxiliary head training
+// ---------------------------------------------------------------------------
+
+/// Per-square labels for the auxiliary neural network heads.
+/// All arrays are indexed as `[row * 8 + col]` with 8x8 padding.
+#[derive(Clone, Debug)]
+pub struct SpatialLabels {
+    /// `road_threat[c][sq]` = 1.0 if color `c` (0=White, 1=Black) has a legal
+    /// move that creates a road win and involves square `sq` (as src or path).
+    pub road_threat: [[f32; 64]; 2],
+    /// `block_threat[c][sq]` = 1.0 if a legal move by color `c` landing on `sq`
+    /// blocks an opponent road-in-1.
+    pub block_threat: [[f32; 64]; 2],
+    /// `cap_flatten[sq]` = 1.0 if any legal capstone-flatten spread has source `sq`.
+    pub cap_flatten: [f32; 64],
+    /// 1.0 if the position is in endgame (few empty squares or low reserves).
+    pub endgame: f32,
+}
+
+impl SpatialLabels {
+    /// Compute spatial labels for the given game state.
+    pub fn compute(state: &GameState) -> Self {
+        let size = state.config.size;
+
+        let mut road_threat = [[0.0f32; 64]; 2];
+        let mut block_threat = [[0.0f32; 64]; 2];
+        let mut cap_flatten = [0.0f32; 64];
+
+        // --- Road threat: mark squares involved in road-winning moves ---
+        for &color in &[Color::White, Color::Black] {
+            let ci = color as usize;
+            let moves = MoveGen::legal_moves_for(
+                &state.board,
+                &state.config,
+                color,
+                state.ply,
+                &state.reserves,
+                &state.templates,
+            );
+
+            for mv in &moves {
+                let mut clone = state.clone();
+                clone.side_to_move = color;
+                let undo = clone.apply_move(*mv);
+                let wins = check_road(&clone.board, size, color);
+                clone.undo_move(*mv, &undo);
+
+                if wins {
+                    // Mark source and destination/path squares
+                    match mv {
+                        Move::Place { square, .. } => {
+                            road_threat[ci][square.0 as usize] = 1.0;
+                        }
+                        Move::Spread { src, dir, template, .. } => {
+                            road_threat[ci][src.0 as usize] = 1.0;
+                            let seq = state.templates.get_sequence(*template);
+                            let (dr, dc) = dir.delta();
+                            let mut r = src.row() as i8;
+                            let mut c = src.col() as i8;
+                            for _ in 0..seq.drops.len() {
+                                r += dr;
+                                c += dc;
+                                let sq = Square::from_rc(r as u8, c as u8);
+                                road_threat[ci][sq.0 as usize] = 1.0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Block threat: mark squares where STM can block opponent road-in-1 ---
+        for &color in &[Color::White, Color::Black] {
+            let ci = color as usize;
+            let opponent = color.opposite();
+
+            // Check if opponent has road-in-1
+            if !TacticalFlags::has_road_in_1(state, opponent) {
+                continue;
+            }
+
+            let stm_moves = MoveGen::legal_moves_for(
+                &state.board,
+                &state.config,
+                color,
+                state.ply,
+                &state.reserves,
+                &state.templates,
+            );
+
+            for mv in &stm_moves {
+                let mut clone = state.clone();
+                clone.side_to_move = color;
+                let undo = clone.apply_move(*mv);
+                let still_has = TacticalFlags::has_road_in_1(&clone, opponent);
+                clone.undo_move(*mv, &undo);
+
+                if !still_has {
+                    // This move blocks the opponent — mark the destination square
+                    match mv {
+                        Move::Place { square, .. } => {
+                            block_threat[ci][square.0 as usize] = 1.0;
+                        }
+                        Move::Spread { src, dir, template, .. } => {
+                            // Mark the final destination of the spread
+                            let seq = state.templates.get_sequence(*template);
+                            let (dr, dc) = dir.delta();
+                            let final_r = src.row() as i8 + dr * seq.drops.len() as i8;
+                            let final_c = src.col() as i8 + dc * seq.drops.len() as i8;
+                            let dst = Square::from_rc(final_r as u8, final_c as u8);
+                            block_threat[ci][dst.0 as usize] = 1.0;
+                            // Also mark source (stack was moved from here)
+                            block_threat[ci][src.0 as usize] = 1.0;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Capstone flatten: mark source squares of cap-flatten spreads ---
+        for &color in &[Color::White, Color::Black] {
+            let moves = MoveGen::legal_moves_for(
+                &state.board,
+                &state.config,
+                color,
+                state.ply,
+                &state.reserves,
+                &state.templates,
+            );
+
+            for mv in &moves {
+                if let Move::Spread { src, dir, template, .. } = mv {
+                    // Check if source top is a capstone of this color
+                    match state.board.get(*src).top {
+                        Some(p) if p.is_cap() && p.color() == color => {}
+                        _ => continue,
+                    };
+
+                    let seq = state.templates.get_sequence(*template);
+                    let num_steps = seq.drops.len();
+                    let last_drop = seq.drops[num_steps - 1];
+
+                    let (dr, dc) = dir.delta();
+                    let final_r = src.row() as i8 + dr * num_steps as i8;
+                    let final_c = src.col() as i8 + dc * num_steps as i8;
+
+                    if final_r < 0 || final_r >= size as i8
+                        || final_c < 0 || final_c >= size as i8
+                    {
+                        continue;
+                    }
+
+                    let final_sq = Square::from_rc(final_r as u8, final_c as u8);
+                    if let Some(target_top) = state.board.get(final_sq).top {
+                        if target_top.is_wall() && last_drop == 1 {
+                            cap_flatten[src.0 as usize] = 1.0;
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Endgame ---
+        let empty = state.board.empty_count(size);
+        let white_total = state.reserves[0] as u32 + state.reserves[1] as u32;
+        let black_total = state.reserves[2] as u32 + state.reserves[3] as u32;
+        let endgame = if empty <= 2 * size as u32
+            || white_total <= size as u32
+            || black_total <= size as u32
+        {
+            1.0
+        } else {
+            0.0
+        };
+
+        SpatialLabels {
+            road_threat,
+            block_threat,
+            cap_flatten,
+            endgame,
+        }
     }
 }
 

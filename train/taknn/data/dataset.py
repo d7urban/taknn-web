@@ -3,6 +3,7 @@ import random
 import torch
 from torch.utils.data import Dataset
 from .shard import ShardDataset
+from .labels import descriptors_to_tensors
 import tak_python
 
 
@@ -70,6 +71,83 @@ class ReplayBuffer(Dataset):
 
     def __getitem__(self, idx):
         return self.all_records[idx]
+
+
+def collate_with_descriptors(batch):
+    """Custom collate_fn that pads variable-length descriptors and policy targets.
+
+    Each sample in batch should have:
+        board_tensor, size_id, wdl, margin, policy_indices, policy_probs,
+        descriptors (from descriptors_to_tensors), and optionally aux labels.
+
+    Returns a dict with all tensors padded to max_moves in the batch.
+    """
+    max_moves = max(sample["descriptors"]["src"].shape[0] for sample in batch)
+    B = len(batch)
+
+    # Standard fixed-shape tensors
+    board_tensors = torch.stack([s["board_tensor"] for s in batch])
+    size_ids = torch.stack([s["size_id"] for s in batch])
+    wdl = torch.stack([s["wdl"] for s in batch])
+    margin = torch.stack([s["margin"] for s in batch])
+    num_moves = torch.tensor([s["descriptors"]["src"].shape[0] for s in batch], dtype=torch.long)
+
+    # Pad descriptors
+    desc_keys_long = ["src", "dst", "move_type", "piece_type", "direction",
+                      "pickup_count", "drop_template_id", "travel_length"]
+    desc_keys_float = ["capstone_flatten", "enters_occupied", "opening_phase"]
+    padded_descs = {}
+
+    for key in desc_keys_long:
+        t = torch.zeros(B, max_moves, dtype=torch.long)
+        for i, s in enumerate(batch):
+            n = s["descriptors"][key].shape[0]
+            t[i, :n] = s["descriptors"][key]
+        padded_descs[key] = t
+
+    for key in desc_keys_float:
+        t = torch.zeros(B, max_moves, dtype=torch.float32)
+        for i, s in enumerate(batch):
+            n = s["descriptors"][key].shape[0]
+            t[i, :n] = s["descriptors"][key]
+        padded_descs[key] = t
+
+    # Path: [B, M, 7]
+    path_t = torch.full((B, max_moves, 7), 255, dtype=torch.long)
+    for i, s in enumerate(batch):
+        n = s["descriptors"]["path"].shape[0]
+        path_t[i, :n, :] = s["descriptors"]["path"]
+    padded_descs["path"] = path_t
+
+    # Pad policy targets to max_moves
+    policy_target = torch.zeros(B, max_moves, dtype=torch.float32)
+    for i, s in enumerate(batch):
+        indices = s["policy_indices"].long()
+        probs = s["policy_probs"].float()
+        # Indices are into legal move list, so they map directly
+        for j in range(len(indices)):
+            idx = indices[j].item()
+            if idx < max_moves:
+                policy_target[i, idx] = probs[j].item()
+
+    result = {
+        "board_tensor": board_tensors,
+        "size_id": size_ids,
+        "wdl": wdl,
+        "margin": margin,
+        "descriptors": padded_descs,
+        "num_moves": num_moves,
+        "policy_target": policy_target,
+    }
+
+    # Optional aux labels
+    if "road_threat_label" in batch[0]:
+        result["road_threat_label"] = torch.stack([s["road_threat_label"] for s in batch])
+        result["block_threat_label"] = torch.stack([s["block_threat_label"] for s in batch])
+        result["cap_flatten_label"] = torch.stack([s["cap_flatten_label"] for s in batch])
+        result["endgame_label"] = torch.stack([s["endgame_label"] for s in batch])
+
+    return result
 
 
 def apply_d4_augmentation(board_tensor, policy_indices, policy_probs, tps_str, board_size, transform=None):

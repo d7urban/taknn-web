@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .teacher import ResidualBlock
+from .teacher import ResidualBlock, PolicyScorerMixin
 
-class StudentModel(nn.Module):
+class StudentModel(PolicyScorerMixin, nn.Module):
     def __init__(self, channels=64, num_blocks=6, film_embed_dim=16):
         super().__init__()
         self.size_embed = nn.Embedding(6, film_embed_dim)

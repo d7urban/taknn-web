@@ -45,7 +45,82 @@ class ResidualBlock(nn.Module):
         out += residual
         return F.relu(out)
 
-class TeacherModel(nn.Module):
+class PolicyScorerMixin:
+    """Shared score_moves() logic for teacher and student models."""
+
+    def score_moves(self, trunk_outputs, descriptors, num_moves):
+        """Score legal moves using the policy MLP.
+
+        Args:
+            trunk_outputs: dict with 'spatial' [B, C, 8, 8] and 'global' [B, C]
+            descriptors: dict of padded tensors:
+                src, dst: [B, M] square indices (0-63)
+                path: [B, M, 7] square indices (255 = padding)
+                move_type, piece_type, direction, pickup_count,
+                drop_template_id, travel_length: [B, M] ints
+                capstone_flatten, enters_occupied, opening_phase: [B, M] floats
+            num_moves: [B] int tensor, actual move count per sample
+
+        Returns:
+            logits: [B, M] with -inf at padding positions
+        """
+        h = trunk_outputs["spatial"]  # [B, C, 8, 8]
+        g = trunk_outputs["global"]   # [B, C]
+        B, C, _, _ = h.shape
+        M = descriptors["src"].shape[1]
+
+        # Flatten spatial to [B, 64, C] for gathering
+        h_flat = h.reshape(B, C, 64).permute(0, 2, 1)  # [B, 64, C]
+
+        # Gather h_src and h_dst: [B, M, C]
+        src_idx = descriptors["src"].long().clamp(0, 63)
+        dst_idx = descriptors["dst"].long().clamp(0, 63)
+        h_src = torch.gather(h_flat, 1, src_idx.unsqueeze(-1).expand(-1, -1, C))
+        h_dst = torch.gather(h_flat, 1, dst_idx.unsqueeze(-1).expand(-1, -1, C))
+
+        # Path pooling: mean of h at path squares, masked
+        path = descriptors["path"].long().clamp(0, 63)  # [B, M, 7]
+        path_mask = descriptors["path"] != 255  # [B, M, 7]
+        path_flat = path.reshape(B, M * 7)
+        h_path_flat = torch.gather(h_flat, 1, path_flat.unsqueeze(-1).expand(-1, -1, C))
+        h_path = h_path_flat.reshape(B, M, 7, C)
+        path_mask_f = path_mask.unsqueeze(-1).float()
+        path_sum = (h_path * path_mask_f).sum(dim=2)
+        path_count = path_mask_f.sum(dim=2).clamp(min=1.0)
+        path_pool = path_sum / path_count  # [B, M, C]
+
+        # Discrete embeddings
+        e_move_type = self.move_type_emb(descriptors["move_type"].long())
+        e_piece_type = self.piece_type_emb(descriptors["piece_type"].long())
+        e_direction = self.direction_emb(descriptors["direction"].long())
+        e_pickup = self.pickup_count_emb(descriptors["pickup_count"].long())
+        e_template = self.drop_template_emb(descriptors["drop_template_id"].long())
+        e_travel = self.travel_length_emb(descriptors["travel_length"].long())
+        discrete = torch.cat([e_move_type, e_piece_type, e_direction,
+                              e_pickup, e_template, e_travel], dim=-1)  # [B, M, 64]
+
+        # Flags
+        flags = torch.stack([
+            descriptors["capstone_flatten"],
+            descriptors["enters_occupied"],
+            descriptors["opening_phase"],
+        ], dim=-1)  # [B, M, 3]
+
+        # Expand global pool
+        g_exp = g.unsqueeze(1).expand(-1, M, -1)
+
+        # Concatenate and run MLP
+        mlp_input = torch.cat([g_exp, h_src, h_dst, path_pool, discrete, flags], dim=-1)
+        logits = self.policy_mlp(mlp_input).squeeze(-1)  # [B, M]
+
+        # Mask padding
+        move_mask = torch.arange(M, device=logits.device).unsqueeze(0) < num_moves.unsqueeze(1)
+        logits = logits.masked_fill(~move_mask, float("-inf"))
+
+        return logits
+
+
+class TeacherModel(PolicyScorerMixin, nn.Module):
     def __init__(self, channels=128, num_blocks=10, film_embed_dim=32):
         super().__init__()
         self.size_embed = nn.Embedding(6, film_embed_dim)
@@ -120,8 +195,3 @@ class TeacherModel(nn.Module):
             "endgame": endgame
         }
 
-    def score_moves(self, trunk_outputs, move_descriptors):
-        # move_descriptors should be a batch of move features.
-        # This part is complex because of variable legal moves.
-        # Usually implemented as a separate step or with padding.
-        pass
