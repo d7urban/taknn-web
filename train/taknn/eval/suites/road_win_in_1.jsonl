@@ -1,0 +1,60 @@
+{"tps": "2,x,1,1/11121,2,2,x/x,12S,2,2/x4 1 14", "size": 4, "category": "road_win_in_1", "expected_move_indices": [28, 32, 33, 35]}
+{"tps": "2S,x,2,2/x4/x4/x,1,1,1 1 4", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0]}
+{"tps": "221,1,1,x/1,x,2,112/x,1112S,2,2/x,2,x2 1 18", "size": 4, "category": "road_win_in_1", "expected_move_indices": [10]}
+{"tps": "1S,2,1111212,x/x,2S,2,2/12S,112S,x,1S/21,1,2,x 2 22", "size": 4, "category": "road_win_in_1", "expected_move_indices": [2]}
+{"tps": "x,1,x,2,x/x,1C,1,2,2/2,x,1,x,2/x,1,x3/1,x3,2 2 7", "size": 5, "category": "road_win_in_1", "expected_move_indices": [18, 20]}
+{"tps": "x,122,x2/1,1,x2/1,21,1222122221S,x/x,2,2,2 2 30", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0]}
+{"tps": "x,1,x3/x,2,22,x,1/2,221S,2,1,1221/12,2,12,1,2/1C,1,1,x,1S 1 24", "size": 5, "category": "road_win_in_1", "expected_move_indices": [0]}
+{"tps": "2S,x,221,1/x,11,222111211,x/x,12,x2/x,2,212,12 2 54", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0, 2]}
+{"tps": "12S,111,1,x/1,21,2,x/x,221112,2,221/2S,x2,1S 1 33", "size": 4, "category": "road_win_in_1", "expected_move_indices": [8, 14, 16, 17, 46]}
+{"tps": "1S,1,111S,x/21S,1,1,1/x,212S,1S,1S/2,12,x,2 2 25", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0]}
+{"tps": "21C,x,2,x2/x,21,2,2,x/121,12C,2,x2/1,1,x3/1,1,x,2,x 1 15", "size": 5, "category": "road_win_in_1", "expected_move_indices": [14, 42, 49, 50]}
+{"tps": "2,1C,x3/1,x3,2/x2,1,x,2/1,1,1121,x,2/x,1S,x,2,2 2 13", "size": 5, "category": "road_win_in_1", "expected_move_indices": [33, 35]}
+{"tps": "x3,1C,1/x2,1,x2/1S,x,1,21,21/2C,x,2,2,1/1,x,2,2,2 2 11", "size": 5, "category": "road_win_in_1", "expected_move_indices": [2]}
+{"tps": "2221S,112212,x2/2,21S,2,2/1,11221,2,x/1,x2,2 1 34", "size": 4, "category": "road_win_in_1", "expected_move_indices": [26]}
+{"tps": "x,21S,x3/1,1C,1,x,1S/2S,1S,1,1,1S/2,x,2,2,212/x,2,x2,1S 2 21", "size": 5, "category": "road_win_in_1", "expected_move_indices": [9, 11, 28]}
+{"tps": "2,211,1,x2/x,1C,1,1,x/x,1,1,1,x/x,22S,1,x2/2,122,111212,2,x 2 53", "size": 5, "category": "road_win_in_1", "expected_move_indices": [0, 2]}
+{"tps": "2,x,212,2/2,2,x,2S/x,11112,x2/1,1,1,x 1 17", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0]}
+{"tps": "2S,1,111,12S/12,2,1,11/2,2,12S,1/2,2,x2 1 26", "size": 4, "category": "road_win_in_1", "expected_move_indices": [2]}
+{"tps": "2S,222,x2/x,211222112,1,x/x,22211112,21,1/1,x2,1 1 64", "size": 4, "category": "road_win_in_1", "expected_move_indices": [10]}
+{"tps": "2S,x,1,1/2,112,1,x/112,12,x2/2,12,1,x 1 20", "size": 4, "category": "road_win_in_1", "expected_move_indices": [2]}
+{"tps": "x,21S,x,1/2,1S,x,21S/12,2,21,x/2,1,1,x 2 16", "size": 4, "category": "road_win_in_1", "expected_move_indices": [6]}
+{"tps": "2S,2222,1S,x/11112S,12,2,x/x,12,1,21S/121,21,1,x 2 34", "size": 4, "category": "road_win_in_1", "expected_move_indices": [59]}
+{"tps": "x,2C,211,x2/2,x,1,1,22212/x,1221,221C,2221S,2/x,2S,1S,x2/1,1,2S,112S,x 2 55", "size": 5, "category": "road_win_in_1", "expected_move_indices": [74]}
+{"tps": "2S,1C,1S,2,x/x,1,x3/x,2111221,x2,1/1,2,2,x2/x,2,x3 1 14", "size": 5, "category": "road_win_in_1", "expected_move_indices": [38, 42, 43]}
+{"tps": "2S,1111,2,x/1221S,222,12111212,2/x3,21/2S,21,x2 2 42", "size": 4, "category": "road_win_in_1", "expected_move_indices": [16]}
+{"tps": "1112,x3/x,1,2,x/1,121,2112,x/21,112S,2,2 1 27", "size": 4, "category": "road_win_in_1", "expected_move_indices": [6]}
+{"tps": "1,111,x2,2S/x,2,12,1,x/2,12C,21,x2/2,2,21C,2S,x/x,2,1,x2 2 19", "size": 5, "category": "road_win_in_1", "expected_move_indices": [16]}
+{"tps": "111,x,2,x/x,1S,2S,x/x2,2212S,221/1,x,2,x 1 16", "size": 4, "category": "road_win_in_1", "expected_move_indices": [32]}
+{"tps": "21S,x,2,2,x/2,2C,x3/2,2,2,x,1S/1,111221,x,112,x/x,1,x,1,x 1 20", "size": 5, "category": "road_win_in_1", "expected_move_indices": [66]}
+{"tps": "x4,2/x2,1,1,x/22,x,1S,1,1/x,2C,2,2,1/x3,2,1 1 9", "size": 5, "category": "road_win_in_1", "expected_move_indices": [30, 32, 33, 35]}
+{"tps": "212212,12,x2/121,1,x2/211,21,221,x/x,2,2,2 1 41", "size": 4, "category": "road_win_in_1", "expected_move_indices": [2]}
+{"tps": "x,1S,x,12S,1/x,1S,1,2,1C/x2,121,12,x/x2,21,1,2/x,2,2C,2,2 2 15", "size": 5, "category": "road_win_in_1", "expected_move_indices": [0]}
+{"tps": "122,x3/x,1,1,x/x,2212,1,1/2S,2,21,1 1 24", "size": 4, "category": "road_win_in_1", "expected_move_indices": [2, 6, 8]}
+{"tps": "2111221,x3/x2,2212,112/1,1,1,x/2S,x,221,x 2 26", "size": 4, "category": "road_win_in_1", "expected_move_indices": [40]}
+{"tps": "12,1S,1S,x,1/2,x2,1,x/2,21,x,121,x/2,x,12C,1C,x/2S,2,x3 2 20", "size": 5, "category": "road_win_in_1", "expected_move_indices": [6, 33, 34]}
+{"tps": "x,12S,x3/x,1,1,1,1/1,2,2C,x,2/2,2,x,1,x/x4,2 1 11", "size": 5, "category": "road_win_in_1", "expected_move_indices": [21, 23, 42]}
+{"tps": "x,12,1,1S/1,x,1,1/x,2,1,2/2,2,2,x 2 9", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0, 4, 14, 17, 20]}
+{"tps": "x,2S,112S,x/2221,2S,2,2/x2,112S,x/21,11122121,21,x 1 36", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0]}
+{"tps": "x,22,12S,x2/2221,2,x2,2/2C,2,21S,x2/1,1121,x2,1/x2,2,x2 1 19", "size": 5, "category": "road_win_in_1", "expected_move_indices": [49]}
+{"tps": "x,12S,2,x,1S/2,12C,2,x,2S/x,112,1,1C,x/x,211,21,1,112221/x2,1,2S,x 1 40", "size": 5, "category": "road_win_in_1", "expected_move_indices": [6, 33]}
+{"tps": "12,1S,x2/12,x3/x,1,1,1/x,22112,2,x 2 16", "size": 4, "category": "road_win_in_1", "expected_move_indices": [33]}
+{"tps": "1,2,2,2,x/1C,x,2,2,1/1,1,1,2,x/1,1S,x3/x2,2S,2,x 1 9", "size": 5, "category": "road_win_in_1", "expected_move_indices": [0]}
+{"tps": "2,2,2,x/x,1,21S,x/1S,1,1S,2/x3,1 2 8", "size": 4, "category": "road_win_in_1", "expected_move_indices": [10]}
+{"tps": "22112,1122,1,x/21S,112S,12,2/1,x,1,221/x2,1,1 1 35", "size": 4, "category": "road_win_in_1", "expected_move_indices": [4]}
+{"tps": "x,12S,2,1S,x/2,12C,2,2,2S/x,112,1,1C,x/x,211,21,1,112221/x2,1,2S,x 1 41", "size": 5, "category": "road_win_in_1", "expected_move_indices": [6, 31]}
+{"tps": "1S,22S,x3/x3,12S,2/1,1,2S,2221C,2/112S,1,1,22221,2/x,121,x,112S,212C 2 55", "size": 5, "category": "road_win_in_1", "expected_move_indices": [14]}
+{"tps": "2S,x,21,1/x2,2112111,x/21S,12S,221S,x/2,221S,x,2 1 33", "size": 4, "category": "road_win_in_1", "expected_move_indices": [47, 53, 54]}
+{"tps": "x,211,2,x/11222,1121,1,2/211112,21,x2/x4 1 42", "size": 4, "category": "road_win_in_1", "expected_move_indices": [2, 30]}
+{"tps": "x,1S,1,21,x/1,1,12C,12,x/x,221,x,21,221C/2,2,2,2221S,1112/2,x4 1 25", "size": 5, "category": "road_win_in_1", "expected_move_indices": [10]}
+{"tps": "x,1,11,x/2,x,1,1/2,x3/2S,2,x2 1 7", "size": 4, "category": "road_win_in_1", "expected_move_indices": [12]}
+{"tps": "x,2,12,x/221,2,2,2/21,x3/1,1,1,x 1 15", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0, 8]}
+{"tps": "x2,1,x/221,1112221,1,x/1,12,2,2/1S,x,2,x 1 20", "size": 4, "category": "road_win_in_1", "expected_move_indices": [4, 10]}
+{"tps": "x,2C,1C,1,x/1,21,1,1,2/x2,2,2,2/2,x,2,2S,2/x2,1,x2 2 14", "size": 5, "category": "road_win_in_1", "expected_move_indices": [8]}
+{"tps": "x2,1S,x/11,x3/1,2,12,x/1,21112,2,x 1 15", "size": 4, "category": "road_win_in_1", "expected_move_indices": [10, 27]}
+{"tps": "1,1,x2/x,22212222,x,1112/x,2,x,22211112S/1,1112,x2 2 69", "size": 4, "category": "road_win_in_1", "expected_move_indices": [96, 97, 98]}
+{"tps": "x,1S,x,2,x/2,x3,2/x,112,212,2,2/1,21,1,x2/x2,1,x,1C 1 16", "size": 5, "category": "road_win_in_1", "expected_move_indices": [4]}
+{"tps": "212,x3/1,1,1,x/1,2,1222122221S,x/x,2,2,2 2 24", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0, 24, 26, 27, 28]}
+{"tps": "x,12C,x3/x,2S,2,x,2/12,21S,2S,x,1/22212,1,1,1C,21/12,1,1,1,1S 2 38", "size": 5, "category": "road_win_in_1", "expected_move_indices": [51]}
+{"tps": "x,112,x,1/x,22,x2/x,2212,2112,2/x,11,1221,221 1 55", "size": 4, "category": "road_win_in_1", "expected_move_indices": [0, 20]}
+{"tps": "2222221S,x3/x,221121,11221,1/x,21S,2S,x/x2,21S,1 1 65", "size": 4, "category": "road_win_in_1", "expected_move_indices": [8, 44, 45, 62]}

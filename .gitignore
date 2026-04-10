@@ -15,5 +15,10 @@ __pycache__/
 train/.venv/
 train/data/
 
+# Training artifacts (large binaries)
+train/checkpoints/
+train/shards/
+train/exports/
+
 # Generated
 *.egg-info/
