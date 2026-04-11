@@ -89,10 +89,11 @@ impl SelfPlayEngine {
                 }
             }
 
-            // Derive teacher WDL from search score (STM perspective).
-            // Convert centipawn-like score to win probability using a logistic curve.
+            // Search-derived soft labels. The Rust training pipeline
+            // (tak-train/data.rs) ignores these in favor of game outcomes;
+            // they are kept in the shard schema for the Python training loop
+            // and potential future use in warm-starting distillation.
             let teacher_wdl = score_to_wdl(search_score);
-            // Normalize margin to [-1, 1] range.
             let teacher_margin = (search_score as f32 / 500.0).clamp(-1.0, 1.0);
 
             TrainingRecord {

@@ -1,6 +1,19 @@
 /*!
 Data pipeline: load `.tknn` shards → collate into GPU-ready batches.
 
+## Label strategy
+
+This pipeline trains on **game outcomes** (ground-truth), not on the
+search-derived `teacher_wdl` / `teacher_margin` stored in each shard
+record.  WDL comes from the game result and margin from the actual flat
+count difference.  The shard's search-score fields are preserved in the
+schema for external consumers (e.g. the Python training loop) but are
+intentionally unused here.
+
+For **soft teacher labels**, use the distillation path (`distill.rs`),
+which runs a frozen teacher network at training time instead of reading
+pre-computed labels from shards.
+
 ## Flow
 
 1. `load_shards()` reads all records from `.tknn` shard files via [`ShardReader`].
@@ -69,10 +82,14 @@ fn encode_record(rec: &TrainingRecord) -> Option<EncodedRecord> {
     let state = rec.unpack_board().ok()?;
     let bt = BoardTensor::encode(&state);
 
-    // WDL from game result
+    // WDL: use the game outcome (hard 1/0 labels), not the shard's
+    // teacher_wdl (search-score logistic). Ground-truth outcomes give
+    // cleaner gradients for the initial teacher; distillation (distill.rs)
+    // uses live teacher inference for soft labels instead.
     let wdl = result_to_wdl(&rec.game_result, &state);
 
-    // Margin: flat_margin normalized and clamped to [-1, 1]
+    // Margin: use the actual flat-count difference at game end, not the
+    // shard's teacher_margin (search-score based). Same rationale as WDL.
     let margin = (rec.flat_margin as f32 / 50.0).clamp(-1.0, 1.0);
 
     // Descriptors + policy target

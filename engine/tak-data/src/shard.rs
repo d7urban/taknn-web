@@ -11,6 +11,11 @@ use tak_core::templates::TemplateTable;
 use tak_core::zobrist;
 
 /// One training record. Serialized as fixed-size header + variable-length data.
+///
+/// Contains both ground-truth labels (`game_result`, `flat_margin`) and
+/// search-derived soft labels (`teacher_wdl`, `teacher_margin`).  The Rust
+/// training pipeline uses the ground-truth labels; the search-derived fields
+/// are consumed by the Python training loop and preserved for future use.
 #[derive(Clone, Debug)]
 pub struct TrainingRecord {
     pub board_size: u8,
@@ -19,14 +24,20 @@ pub struct TrainingRecord {
     pub reserves: [u8; 4],
     pub komi: i8,
     pub half_komi: bool,
+    /// Ground-truth game outcome (used by Rust trainer for WDL labels).
     pub game_result: GameResult,
+    /// Ground-truth flat-count difference at game end (used by Rust trainer
+    /// for margin labels, normalized to [-1, 1] via `/50`).
     pub flat_margin: i16,
     pub search_depth: u8,
     pub search_nodes: u32,
     pub game_id: u32,
     pub source_model_id: u16,
     pub tactical_phase: TacticalPhase,
+    /// Search-score soft WDL (logistic curve). Used by Python trainer;
+    /// intentionally unused by Rust trainer (see `tak-train/data.rs`).
     pub teacher_wdl: [f16; 3],
+    /// Search-score soft margin. Same consumer note as `teacher_wdl`.
     pub teacher_margin: f32,
     /// (move_index, probability)
     pub policy_target: Vec<(u16, f16)>,
