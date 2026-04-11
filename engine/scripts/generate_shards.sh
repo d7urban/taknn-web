@@ -14,7 +14,7 @@
 #   -n, --num-games       Target total games across all sizes (default: 10000)
 #   -o, --output-dir      Output directory (default: train/shards)
 #   -d, --depth           Search depth per move (default: 6)
-#   -t, --time-ms         Max time per move in ms (default: 2000)
+#   -t, --time-ms         Max time per move in ms (default: 1000)
 #   -j, --threads         Worker threads, 0 = all cores (default: 0)
 #       --seed-base       Base RNG seed (default: random)
 #       --games-per-shard Games per shard file (default: 50, must match existing shards)
@@ -38,7 +38,7 @@ Options:
   -n, --num-games       Target total games across all sizes (default: 10000)
   -o, --output-dir      Output directory (default: train/shards)
   -d, --depth           Search depth per move (default: 6)
-  -t, --time-ms         Max time per move in ms (default: 2000)
+  -t, --time-ms         Max time per move in ms (default: 1000)
   -j, --threads         Worker threads, 0 = all cores (default: 0)
       --seed-base       Base RNG seed (default: random)
       --games-per-shard Games per shard file (default: 50, must match existing shards)
@@ -167,7 +167,13 @@ for i in "${!SIZES[@]}"; do
 done
 echo
 
+echo "Building selfplay binary..."
+cargo build --release --manifest-path "$ENGINE_DIR/Cargo.toml" -p tak-data --bin selfplay
+SELFPLAY="$ENGINE_DIR/target/release/selfplay"
+echo
+
 generated=0
+run_start=$SECONDS
 for i in "${!SIZES[@]}"; do
     size=${SIZES[$i]}
     pct=${PCTS[$i]}
@@ -188,7 +194,8 @@ for i in "${!SIZES[@]}"; do
     seed=$(( SEED_BASE + size * 1000 ))
 
     echo "--- ${size}x${size}: generating ${need} games to reach ${target} ---"
-    cargo run --release --manifest-path "$ENGINE_DIR/Cargo.toml" -p tak-data --bin selfplay -- \
+    size_start=$SECONDS
+    "$SELFPLAY" \
         -s "$size" \
         -n "$need" \
         -d "$DEPTH" \
@@ -197,9 +204,12 @@ for i in "${!SIZES[@]}"; do
         --seed "$seed" \
         --games-per-shard "$GAMES_PER_SHARD" \
         --output-dir "$OUTPUT_DIR"
+    elapsed=$(( SECONDS - size_start ))
+    echo "    ${size}x${size}: finished in ${elapsed}s"
     generated=$(( generated + need ))
     echo
 done
 
+total_elapsed=$(( SECONDS - run_start ))
 total_shards=$(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*.tknn" | wc -l)
-echo "=== Done: generated ${generated} new games, ${total_shards} total shard files ==="
+echo "=== Done: generated ${generated} new games, ${total_shards} total shard files in ${total_elapsed}s ==="
