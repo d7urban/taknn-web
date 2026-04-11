@@ -472,14 +472,22 @@ impl<E: Evaluator> PvsSearch<E> {
         // Uses the fast bitwise placement check — O(board_area) vs the
         // O(N_moves) full legal-move approach.
         let opponent = state.side_to_move.opposite();
-        let opponent_threatens_road =
-            state::has_road_in_1_placement(&state.board, state.config.size, opponent, &state.reserves);
-        if !opponent_threatens_road {
+        let opp_bridging =
+            state::road_bridging_squares(&state.board, state.config.size, opponent);
+        if opp_bridging == 0 {
             return alpha;
         }
 
-        // In quiescence, search all legal moves (the forced defense
-        // situation means most moves are relevant).
+        // Also compute side-to-move bridging squares: if we can complete our
+        // own road, that move must not be filtered out.
+        let stm_bridging =
+            state::road_bridging_squares(&state.board, state.config.size, state.side_to_move);
+        let relevant = opp_bridging | stm_bridging;
+        let n = state.config.size as usize;
+
+        // In quiescence under road threat, only search moves that address it:
+        //  - Placements on bridging squares (block opponent or complete own road)
+        //  - All spread moves (may block via captures or intermediate drops)
         let moves = state.legal_moves();
         let scored = ordering::score_moves(
             &moves,
@@ -492,6 +500,15 @@ impl<E: Evaluator> PvsSearch<E> {
 
         for &(move_idx, _) in &scored {
             let mv = moves[move_idx];
+
+            // Filter placements to only bridging squares.
+            if let Move::Place { square, .. } = mv {
+                let bit = square.row() as usize * n + square.col() as usize;
+                if relevant & (1u64 << bit) == 0 {
+                    continue;
+                }
+            }
+
             let undo = state.apply_move(mv);
 
             let score = -self.quiesce(state, -beta, -alpha, ply + 1);
