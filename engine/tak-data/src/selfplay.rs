@@ -69,11 +69,11 @@ impl SelfPlayEngine {
             let move_idx = sample_index(rng, &policy);
             let selected_move = moves[move_idx];
 
-            let tactical = TacticalFlags::compute(&state);
+            let tactical_phase = TacticalFlags::phase_fast(&state);
             let record_state = state.clone();
             let search_score = result.score;
 
-            history.push((record_state, tactical, policy, result.depth, result.nodes as u32, search_score));
+            history.push((record_state, tactical_phase, policy, result.depth, result.nodes as u32, search_score));
 
             state.apply_move(selected_move);
         }
@@ -81,7 +81,7 @@ impl SelfPlayEngine {
         let final_result = state.result;
         let final_margin = state.flat_margin();
 
-        history.into_iter().map(|(s, t, policy, depth, nodes, search_score)| {
+        history.into_iter().map(|(s, phase, policy, depth, nodes, search_score)| {
             let mut sparse_policy = Vec::new();
             for (i, &p) in policy.iter().enumerate() {
                 if p > 0.001 {
@@ -108,7 +108,7 @@ impl SelfPlayEngine {
                 search_nodes: nodes,
                 game_id,
                 source_model_id: 0,
-                tactical_phase: t.phase(),
+                tactical_phase: phase,
                 teacher_wdl,
                 teacher_margin,
                 policy_target: sparse_policy,

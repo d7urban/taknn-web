@@ -520,6 +520,88 @@ fn build_col_mask(n: usize, exclude_col: usize) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
+// Fast road-in-1 detection (bitwise)
+// ---------------------------------------------------------------------------
+
+/// Expand a bitset by one orthogonal step in all four directions.
+#[inline]
+fn expand_one_step(bits: u64, n: usize) -> u64 {
+    let valid_mask = if n < 8 { (1u64 << (n * n)) - 1 } else { u64::MAX };
+    let not_last_col = build_col_mask(n, n - 1);
+    let not_first_col = build_col_mask(n, 0);
+
+    let mut exp = bits;
+    exp |= bits >> n; // north
+    exp |= bits << n; // south
+    exp |= (bits & not_last_col) << 1; // east
+    exp |= (bits & not_first_col) >> 1; // west
+    exp & valid_mask
+}
+
+/// Fast bitwise check: can `color` complete a road by placing a single
+/// flat or capstone on an empty square?
+///
+/// Runs in O(board_area) time using bitwise flood fill — much cheaper than
+/// the O(legal_moves) approach of cloning state for every move. Only
+/// detects placement-based road completions (not spreads or wall-flattens),
+/// which covers the vast majority of road-in-1 scenarios.
+pub fn has_road_in_1_placement(
+    board: &Board,
+    size: u8,
+    color: Color,
+    reserves: &[u8; 4],
+) -> bool {
+    // Check reserves: need at least one stone or capstone to place.
+    let (stones, caps) = match color {
+        Color::White => (reserves[0], reserves[1]),
+        Color::Black => (reserves[2], reserves[3]),
+    };
+    if stones == 0 && caps == 0 {
+        return false;
+    }
+
+    let n = size as usize;
+    let valid_mask = if n < 8 { (1u64 << (n * n)) - 1 } else { u64::MAX };
+    let mut road_sq: u64 = 0;
+    let mut occupied: u64 = 0;
+
+    for r in 0..n {
+        for c in 0..n {
+            let sq = Square::from_rc(r as u8, c as u8);
+            let bit = r * n + c;
+            if let Some(top) = board.get(sq).top {
+                occupied |= 1u64 << bit;
+                if top.color() == color && !top.is_wall() {
+                    road_sq |= 1u64 << bit;
+                }
+            }
+        }
+    }
+
+    // Need at least size-1 road-eligible squares for a one-placement road.
+    if road_sq.count_ones() < n as u32 - 1 {
+        return false;
+    }
+
+    // Candidate squares: empty squares adjacent to existing road squares.
+    let empty = !occupied & valid_mask;
+    let candidates = expand_one_step(road_sq, n) & empty;
+
+    // Try each candidate: would adding it create a road?
+    let mut remaining = candidates;
+    while remaining != 0 {
+        let bit = remaining.trailing_zeros() as usize;
+        let test = road_sq | (1u64 << bit);
+        if check_road_direction(test, n, true) || check_road_direction(test, n, false) {
+            return true;
+        }
+        remaining &= remaining - 1; // clear lowest set bit
+    }
+
+    false
+}
+
+// ---------------------------------------------------------------------------
 // Flat win detection
 // ---------------------------------------------------------------------------
 

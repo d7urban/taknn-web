@@ -6,6 +6,7 @@ members = [
     "tak-data",
     "tak-wasm",
     "tak-python",
+    "tak-train",
 ]
 
 [workspace.dependencies]
@@ -17,3 +18,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zstd = "0.13"
 half = { version = "2.4", features = ["serde"] }
+tch = "0.24"
+safetensors = "0.4"

@@ -6,7 +6,7 @@
 use crate::board::Square;
 use crate::moves::{Move, MoveGen};
 use crate::piece::Color;
-use crate::state::{check_road, GameState};
+use crate::state::{check_road, has_road_in_1_placement, GameState};
 
 // ---------------------------------------------------------------------------
 // TacticalPhase
@@ -121,6 +121,28 @@ impl TacticalFlags {
         {
             TacticalPhase::Tactical
         } else if self.endgame {
+            TacticalPhase::SemiTactical
+        } else {
+            TacticalPhase::Quiet
+        }
+    }
+
+    /// Fast tactical phase computation using the bitwise road-in-1 check.
+    ///
+    /// Skips the expensive forced-defense and capstone-flatten analyses
+    /// (O(N_moves²) and O(N_moves) respectively) and uses the O(board_area)
+    /// placement-based road-in-1 detection instead.
+    pub fn phase_fast(state: &GameState) -> TacticalPhase {
+        let size = state.config.size;
+        if has_road_in_1_placement(&state.board, size, Color::White, &state.reserves)
+            || has_road_in_1_placement(&state.board, size, Color::Black, &state.reserves)
+        {
+            return TacticalPhase::Tactical;
+        }
+        let empty = state.board.empty_count(size);
+        let white_total = state.reserves[0] as u32 + state.reserves[1] as u32;
+        let black_total = state.reserves[2] as u32 + state.reserves[3] as u32;
+        if empty <= 2 * size as u32 || white_total <= size as u32 || black_total <= size as u32 {
             TacticalPhase::SemiTactical
         } else {
             TacticalPhase::Quiet

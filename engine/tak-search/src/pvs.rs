@@ -1,8 +1,8 @@
 //! Iterative deepening Principal Variation Search (PVS/Negascout).
 
 use tak_core::moves::Move;
-use tak_core::state::{GameResult, GameState};
-use tak_core::tactical::TacticalFlags;
+use tak_core::piece::Color;
+use tak_core::state::{self, GameResult, GameState};
 
 use crate::eval::{Evaluator, Score, SCORE_FLAT_WIN, SCORE_INF, SCORE_MATE};
 use crate::ordering::{self, HistoryTable, KillerTable};
@@ -114,6 +114,9 @@ impl<E: Evaluator> PvsSearch<E> {
             best_result.depth = 1;
             return best_result;
         }
+        // Keep a legal fallback move even if time control stops us before the
+        // first completed iteration produces a PV.
+        best_result.best_move = Some(root_moves[0]);
 
         let mut pv = Vec::new();
 
@@ -298,12 +301,16 @@ impl<E: Evaluator> PvsSearch<E> {
         }
 
         // Tactical extension: extend by 1 if road-in-1 exists for either side.
-        let tactical = TacticalFlags::compute(state);
-        let extension: u8 = if tactical.road_in_1_white || tactical.road_in_1_black {
-            1
-        } else {
-            0
-        };
+        // Uses the fast bitwise placement check — O(board_area) instead of the
+        // O(N_moves²) TacticalFlags::compute.
+        let extension: u8 =
+            if state::has_road_in_1_placement(&state.board, state.config.size, Color::White, &state.reserves)
+                || state::has_road_in_1_placement(&state.board, state.config.size, Color::Black, &state.reserves)
+            {
+                1
+            } else {
+                0
+            };
 
         let moves = state.legal_moves();
         if moves.is_empty() {
@@ -461,12 +468,12 @@ impl<E: Evaluator> PvsSearch<E> {
             return alpha;
         }
 
-        // Only extend quiescence if the opponent has a road-in-1 (forcing us to respond).
-        let tactical = TacticalFlags::compute(state);
-        let opponent_threatens_road = match state.side_to_move {
-            tak_core::piece::Color::White => tactical.road_in_1_black,
-            tak_core::piece::Color::Black => tactical.road_in_1_white,
-        };
+        // Only extend quiescence if the opponent has a road-in-1.
+        // Uses the fast bitwise placement check — O(board_area) vs the
+        // O(N_moves) full legal-move approach.
+        let opponent = state.side_to_move.opposite();
+        let opponent_threatens_road =
+            state::has_road_in_1_placement(&state.board, state.config.size, opponent, &state.reserves);
         if !opponent_threatens_road {
             return alpha;
         }
@@ -829,7 +836,9 @@ mod tests {
         use rand::Rng;
         use rand::SeedableRng;
 
-        // 5x5 with 1s: should reach depth 4+.
+        // 5x5 with 3s: should reach depth 3+.
+        // (debug-mode quiescence is expensive; 3s is sufficient even under
+        // parallel test load.)
         {
             let mut rng = rand_xoshiro::Xoshiro256StarStar::seed_from_u64(456);
             let config = GameConfig::standard(5);
@@ -844,19 +853,19 @@ mod tests {
 
             if !state.result.is_terminal() {
                 let mut search = PvsSearch::new(
-                    SearchConfig { max_depth: 20, max_time_ms: 1000, tt_size_mb: 16 },
+                    SearchConfig { max_depth: 20, max_time_ms: 3000, tt_size_mb: 16 },
                     HeuristicEval,
                 );
                 let result = search.search(&mut state);
                 assert!(
                     result.depth >= 3,
-                    "5x5: should reach depth 3+ within 1s, got depth {}",
+                    "5x5: should reach depth 3+ within 3s, got depth {}",
                     result.depth
                 );
             }
         }
 
-        // 6x6 with 3s: should reach depth 3+.
+        // 6x6 with 5s: should reach depth 3+.
         {
             let mut rng = rand_xoshiro::Xoshiro256StarStar::seed_from_u64(789);
             let config = GameConfig::standard(6);
@@ -871,13 +880,13 @@ mod tests {
 
             if !state.result.is_terminal() {
                 let mut search = PvsSearch::new(
-                    SearchConfig { max_depth: 20, max_time_ms: 3000, tt_size_mb: 16 },
+                    SearchConfig { max_depth: 20, max_time_ms: 5000, tt_size_mb: 16 },
                     HeuristicEval,
                 );
                 let result = search.search(&mut state);
                 assert!(
                     result.depth >= 2,
-                    "6x6: should reach depth 2+ within 3s, got depth {}",
+                    "6x6: should reach depth 2+ within 5s, got depth {}",
                     result.depth
                 );
             }

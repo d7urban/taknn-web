@@ -69,10 +69,11 @@ impl TimeManager {
     }
 
     /// Check if we have enough time for another iteration.
-    /// Heuristic: if we've used more than 40% of the time, don't start a new depth.
-    /// Conservative to prevent deep iterations from blowing past the time limit.
+    /// Heuristic: reserve roughly one third of the budget for the next depth.
+    /// This is still conservative, but less prone to stalling at shallow depth
+    /// when the process is under transient CPU load from neighboring tests.
     pub fn can_start_new_depth(&self) -> bool {
         let elapsed = self.elapsed_ms();
-        elapsed < self.max_time_ms * 40 / 100
+        elapsed * 3 < self.max_time_ms * 2
     }
 }

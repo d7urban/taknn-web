@@ -41,12 +41,12 @@ def compute_policy_loss(logits, policy_target, num_moves):
     if not has_target.any():
         return torch.tensor(0.0, device=logits.device, requires_grad=True)
 
-    # Masked log-softmax — replace -inf with large negative finite to avoid 0 * -inf = NaN
-    safe_logits = logits.clone()
+    # Cast to float32 for numerical stability under mixed precision
+    safe_logits = logits.float()
     safe_logits[safe_logits == float("-inf")] = -1e9
     log_probs = F.log_softmax(safe_logits, dim=1)  # [B, M]
 
-    loss = -(policy_target * log_probs).sum(dim=1)  # [B]
+    loss = -(policy_target.float() * log_probs).sum(dim=1)  # [B]
     return loss[has_target].mean()
 
 
@@ -91,10 +91,11 @@ def compute_losses(model, batch, config, device):
         cf_label = batch["cap_flatten_label"].to(device)
         eg_label = batch["endgame_label"].to(device)
 
-        loss_road = F.binary_cross_entropy(outputs["road"], rt_label)
-        loss_block = F.binary_cross_entropy(outputs["block"], bt_label)
-        loss_cap = F.binary_cross_entropy(outputs["cap"], cf_label)
-        loss_endgame = F.binary_cross_entropy(outputs["endgame"], eg_label)
+        with torch.amp.autocast("cuda", enabled=False):
+            loss_road = F.binary_cross_entropy(outputs["road"].float(), rt_label.float())
+            loss_block = F.binary_cross_entropy(outputs["block"].float(), bt_label.float())
+            loss_cap = F.binary_cross_entropy(outputs["cap"].float(), cf_label.float())
+            loss_endgame = F.binary_cross_entropy(outputs["endgame"].float(), eg_label.float())
 
         losses["road"] = loss_road
         losses["block"] = loss_block
