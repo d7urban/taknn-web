@@ -109,8 +109,9 @@ fn main() {
             shard_idx,
             size = args.board_size
         ));
-        let file = std::fs::File::create(&shard_path)
-            .unwrap_or_else(|e| panic!("Failed to create {}: {e}", shard_path.display()));
+        let tmp_path = shard_path.with_extension("tknn.tmp");
+        let file = std::fs::File::create(&tmp_path)
+            .unwrap_or_else(|e| panic!("Failed to create {}: {e}", tmp_path.display()));
         let mut writer = ShardWriter::new(file)
             .unwrap_or_else(|e| panic!("Failed to init shard writer: {e}"));
 
@@ -125,6 +126,8 @@ fn main() {
         }
 
         writer.finish().expect("Failed to finish shard");
+        std::fs::rename(&tmp_path, &shard_path)
+            .unwrap_or_else(|e| panic!("Failed to rename {}: {e}", tmp_path.display()));
 
         total_records.fetch_add(shard_records, Ordering::Relaxed);
         let done = total_games.fetch_add(games_in_shard, Ordering::Relaxed) + games_in_shard;

@@ -132,6 +132,13 @@ PCTS=(   2   10   25   55    5    3  )
 
 mkdir -p "$OUTPUT_DIR"
 
+# Clean up incomplete shards from interrupted runs.
+stale=$(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*.tknn.tmp" | wc -l)
+if (( stale > 0 )); then
+    echo "Removing ${stale} incomplete .tmp shard(s) from a previous run"
+    find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*.tknn.tmp" -delete
+fi
+
 # Count existing games per size from shard filenames.
 declare -A EXISTING
 for size in "${SIZES[@]}"; do
