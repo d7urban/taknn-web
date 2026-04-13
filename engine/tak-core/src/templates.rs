@@ -6,7 +6,7 @@ use arrayvec::ArrayVec;
 
 /// Unique identifier for a drop template. ID 0 is reserved for "not a spread
 /// move" (i.e. placements).
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug)]
 pub struct DropTemplateId(pub u16);
 
 /// A contiguous range of template IDs for a given (pickup_count, travel_length)
@@ -324,12 +324,12 @@ mod tests {
     #[test]
     fn total_actions_all_sizes() {
         // placements = N*N*3, movements from formula above
-        assert_eq!(total_actions(3), 27 + 108);       // 135
-        assert_eq!(total_actions(4), 48 + 448);       // 496
-        assert_eq!(total_actions(5), 75 + 1500);      // 1575
-        assert_eq!(total_actions(6), 108 + 4464);     // 4572
-        assert_eq!(total_actions(7), 147 + 12348);    // 12495
-        assert_eq!(total_actions(8), 192 + 32512);    // 32704
+        assert_eq!(total_actions(3), 27 + 108); // 135
+        assert_eq!(total_actions(4), 48 + 448); // 496
+        assert_eq!(total_actions(5), 75 + 1500); // 1575
+        assert_eq!(total_actions(6), 108 + 4464); // 4572
+        assert_eq!(total_actions(7), 147 + 12348); // 12495
+        assert_eq!(total_actions(8), 192 + 32512); // 32704
     }
 
     // -- drop sequence correctness --

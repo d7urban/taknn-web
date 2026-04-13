@@ -9,6 +9,7 @@ nn = ["dep:tch"]
 
 [dependencies]
 tak-core = { path = "../tak-core" }
+tak-search = { path = "../tak-search" }
 arrayvec = { workspace = true }
 tak-data = { path = "../tak-data" }
 tch = { workspace = true, optional = true }
@@ -34,4 +35,9 @@ required-features = ["nn"]
 [[bin]]
 name = "tak-export"
 path = "bin/export.rs"
+required-features = ["nn"]
+
+[[bin]]
+name = "tak-iterate"
+path = "bin/iterate.rs"
 required-features = ["nn"]

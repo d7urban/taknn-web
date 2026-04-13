@@ -13,7 +13,7 @@ Under standard Tak rules: the first two plies are placements of the opponent's f
 
 ## Background
 
-The fastest practical route is expert iteration with a search teacher, not a pure AlphaZero replica. The strongest current public consumer-hardware Tak result is Topaz, which uses an efficiently updatable neural network trained on roughly 1 billion self-play positions, focused on 6x6 Tak with 2 komi, and scores positively against the GPU-based TakZero at fast time controls.
+The training route is: bootstrap the teacher net with minimax/PVS self-play, then switch to an AlphaZero-style iterative self-play loop until the teacher is strong enough to distill into the browser student. The strongest current public consumer-hardware Tak result is Topaz, which uses an efficiently updatable neural network trained on roughly 1 billion self-play positions, focused on 6x6 Tak with 2 komi, and scores positively against the GPU-based TakZero at fast time controls.
 
 Tak's rules favor a size-general design. The board sizes and piece counts:
 
@@ -356,11 +356,11 @@ Windowed replay:
 
 Three streams:
 
-1. Heuristic-engine self-play for bootstrapping
-2. Teacher-search labeling on sampled positions
-3. Net-guided self-play after the first competent model exists
+1. Minimax/PVS self-play for the initial teacher bootstrap
+2. AlphaZero-style self-play once the first competent teacher exists
+3. Targeted search reanalysis on sampled positions when sharper policy/value targets are worth the cost
 
-Do not wait for pure self-play to do everything.
+Do not start from random self-play; bootstrap first, then let the iterative teacher-improvement loop dominate.
 
 ### Training Input Path
 
@@ -431,7 +431,7 @@ A model that gains 25 Elo but doubles browser latency may not be promotable.
 
 ### Phase A: Engine-First Bootstrapping
 
-Start with a decent non-neural Tak engine before any RL:
+Start with a decent non-neural Tak engine and use minimax/PVS self-play to generate the first teacher-training corpus:
 
 - Alpha-beta / PVS
 - Hand-coded static eval
@@ -440,29 +440,29 @@ Start with a decent non-neural Tak engine before any RL:
 - Flat-win heuristics
 - Opening randomization
 
-This gives a usable teacher immediately and makes every later phase faster.
+This gives a usable bootstrap teacher and avoids wasting early iterations on random-play noise.
 
-### Phase B: Supervised Distillation from Search
+### Phase B: Teacher Bootstrap from Minimax Self-Play
 
-Generate a large corpus of randomized positions on each size and label them with:
+Generate a large corpus of randomized positions on each size from minimax/PVS self-play and train the first teacher on:
 
 - Root move distribution from search
 - Game result / deep-search value
 - Flat-margin estimate
 - Threat labels
 
-This is the fastest path to first strength.
+This is the fastest path to the first competent teacher net.
 
-### Phase C: Expert Iteration
+### Phase C: AlphaZero-Style Teacher Iteration
 
-Replace static eval with the network, keep alpha-beta as the teacher, and iterate:
+After the first teacher is competent, switch the mainline loop to iterative self-play:
 
-1. Search-guided self-play
-2. Retrain net
-3. Stronger search with updated net
-4. Repeat
+1. Teacher-guided self-play with exploration
+2. Retrain the teacher on the replay window
+3. Evaluate against the current promoted teacher and heuristic anchors
+4. Promote the candidate and repeat
 
-This is faster than waiting for pure self-play from scratch to discover Tak strategy.
+The bootstrap solves the cold start; the iterative loop is what makes the teacher strong enough to distill.
 
 ### Phase D: Curriculum by Board Size
 
@@ -480,7 +480,7 @@ Shared trunk with FiLM size conditioning (Decision 6). The trunk learns Tak-wide
 
 After the teacher is strong:
 
-- Distill teacher search into the small browser student (6 blocks, 64 channels)
+- Distill the stabilized teacher into the small browser student (6 blocks, 64 channels)
 - Quantize to INT8
 - Export to ONNX
 - Run with ONNX Runtime Web: WebGPU when available, WASM as fallback
@@ -536,27 +536,27 @@ This is the first actually playable bot and the first data generator.
 
 ### Checkpoint 3 — Data Pipeline + Trainer + Evaluator
 
-**Runs:** first trained model offline; browser can load student net for move ordering/eval on 4x4 and 5x5.
+**Runs:** first trained teacher model offline; student distillation stays deferred until the teacher stabilizes.
 
 Deliverables:
 - Self-play shard writer with zstd compression
 - Dataset manifests
 - Replay sampler with rule-based thinning (Decision 3)
 - Training loop with D4 augmentation (Decision 2)
-- Distillation targets
+- Teacher policy/value targets from bootstrap self-play
 - Elo harness with anchors A–E
 - Tactical test suites
-- Promotion/gating script with browser-performance gates
+- Promotion/gating script for teacher iterations
 
 **Time:** 1–2 weeks engineering, then immediate first training runs
 
 ### Checkpoint 4 — Strong 4x4 / Competent 5x5
 
-**Runs:** first net-guided browser bot that is meaningfully better than pure heuristics.
+**Runs:** first net-guided teacher that is meaningfully better than pure heuristics and can drive iterative self-play.
 
 Deliverables:
 - Teacher residual net (10–12 blocks, 128 ch, FiLM dim 32)
-- Distilled student residual net (6 blocks, 64 ch, FiLM dim 16)
+- AlphaZero-style self-play iteration loop
 - Legal-move scorer policy head (Decision 1)
 - Policy-guided move ordering
 - Value-guided leaf eval
@@ -566,13 +566,13 @@ Deliverables:
 
 ### Checkpoint 5 — Capstone-Competent 5x5
 
-**Runs:** browser bot with reliable capstone tactics and nontrivial opening/midgame play.
+**Runs:** teacher search with reliable capstone tactics and nontrivial opening/midgame play.
 
 Deliverables:
 - Tactical auxiliary heads active
-- Stronger search labeling
+- Stronger teacher-guided self-play
 - Larger 5x5 training mix
-- Improved student quantization/export
+- Stabilized post-bootstrap teacher promotions
 
 **Training time on 3090:** 1–2 additional weeks
 
@@ -586,6 +586,7 @@ Deliverables:
 - Stronger gating harness
 - Opening diversity controls (Decision 5: family-balanced self-play)
 - Opening book generation from stabilized teacher
+- Teacher-to-student distillation/export from the stabilized 6x6 teacher
 - Value-target stabilization
 - Versioned replay windows
 
@@ -651,4 +652,4 @@ All sizes at comparable strength: not a reasonable mainline promise on this hard
 
 ## Bottom Line
 
-Build a good Tak engine first, build the data and evaluation system second, train one residual model family only, target 6x6 peak-human strength as the real milestone, ship a browser residual student on Vercel, treat 7x7/8x8 and NNUE as later research branches.
+Build a good Tak engine first, build the data and evaluation system second, bootstrap the teacher with minimax self-play, strengthen it through an AlphaZero-style loop, train one residual model family only, target 6x6 peak-human strength as the real milestone, then ship a browser residual student on Vercel. Treat 7x7/8x8 and NNUE as later research branches.

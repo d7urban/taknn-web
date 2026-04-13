@@ -12,7 +12,6 @@ members = [
 [workspace.dependencies]
 arrayvec = "0.7"
 rand = { version = "0.9", default-features = false }
-getrandom = { version = "0.3", features = ["wasm_js"] }
 rand_xoshiro = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

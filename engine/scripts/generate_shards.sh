@@ -42,6 +42,9 @@ Options:
   -j, --threads         Worker threads, 0 = all cores (default: 0)
       --seed-base       Base RNG seed (default: random)
       --games-per-shard Games per shard file (default: 50, must match existing shards)
+      --noise-plies     Number of plies with Dirichlet noise (default: 6)
+      --dirichlet-alpha Dirichlet noise alpha (default: 0.3)
+      --dirichlet-weight Dirichlet noise weight (default: 0.25)
   -h, --help            Show this help text
 EOF
 }
@@ -210,7 +213,10 @@ for i in "${!SIZES[@]}"; do
         -j "$THREADS" \
         --seed "$seed" \
         --games-per-shard "$GAMES_PER_SHARD" \
-        --output-dir "$OUTPUT_DIR"
+        --output-dir "$OUTPUT_DIR" \
+        --noise-plies "$NOISE_PLIES" \
+        --dirichlet-alpha "$DIRICHLET_ALPHA" \
+        --dirichlet-weight "$DIRICHLET_WEIGHT"
     elapsed=$(( SECONDS - size_start ))
     echo "    ${size}x${size}: finished in ${elapsed}s"
     generated=$(( generated + need ))

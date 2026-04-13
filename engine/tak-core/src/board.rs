@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use crate::piece::{Color, Piece};
 
 /// Square index: 0..63, row-major on the 8x8 grid.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug)]
 pub struct Square(pub u8);
 
 impl Square {

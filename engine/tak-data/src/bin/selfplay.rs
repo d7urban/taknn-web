@@ -54,9 +54,29 @@ struct Args {
     #[arg(long, default_value_t = 42)]
     seed: u64,
 
+    /// Number of plies to add Dirichlet noise to root.
+    #[arg(long, default_value_t = 6)]
+    noise_plies: u16,
+
     /// Temperature for first N plies.
     #[arg(long, default_value_t = 8)]
     warm_plies: u16,
+
+    /// Warm temperature.
+    #[arg(long, default_value_t = 1.0)]
+    warm_temp: f32,
+
+    /// Cool temperature.
+    #[arg(long, default_value_t = 0.1)]
+    cool_temp: f32,
+
+    /// Dirichlet noise alpha.
+    #[arg(long, default_value_t = 0.3)]
+    dirichlet_alpha: f32,
+
+    /// Dirichlet noise weight.
+    #[arg(long, default_value_t = 0.25)]
+    dirichlet_weight: f32,
 }
 
 fn main() {
@@ -96,10 +116,14 @@ fn main() {
                 tt_size_mb: args.tt_size_mb,
             },
             temp_schedule: TemperatureSchedule {
+                noise_plies: args.noise_plies,
                 warm_plies: args.warm_plies,
-                warm_temp: 1.0,
-                cool_temp: 0.1,
+                warm_temp: args.warm_temp,
+                cool_temp: args.cool_temp,
+                dirichlet_alpha: args.dirichlet_alpha,
+                dirichlet_weight: args.dirichlet_weight,
             },
+            model_id: 0,
         };
         let engine = SelfPlayEngine::new(config);
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(args.seed.wrapping_add(shard_idx as u64));

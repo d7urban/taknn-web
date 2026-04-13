@@ -1,32 +1,40 @@
-use rand::Rng;
-use half::f16;
-use tak_core::state::{GameResult, GameState};
-use tak_core::rules::GameConfig;
-use tak_core::tactical::TacticalFlags;
-use tak_search::pvs::{PvsSearch, SearchConfig};
-use tak_search::eval::{HeuristicEval, SCORE_MATE, SCORE_FLAT_WIN};
 use crate::shard::TrainingRecord;
+use half::f16;
+use rand::Rng;
+use rand_distr::{Distribution, Gamma};
+use tak_core::rules::GameConfig;
+use tak_core::state::{GameResult, GameState};
+use tak_core::tactical::TacticalFlags;
+use tak_search::eval::{HeuristicEval, SCORE_FLAT_WIN, SCORE_MATE};
+use tak_search::pvs::{PvsSearch, SearchConfig};
 
 #[derive(Clone, Debug)]
 pub struct SelfPlayConfig {
     pub board_size: u8,
     pub search_config: SearchConfig,
     pub temp_schedule: TemperatureSchedule,
+    pub model_id: u16,
 }
 
 #[derive(Clone, Debug)]
 pub struct TemperatureSchedule {
+    pub noise_plies: u16,
     pub warm_plies: u16,
     pub warm_temp: f32,
     pub cool_temp: f32,
+    pub dirichlet_alpha: f32,
+    pub dirichlet_weight: f32,
 }
 
 impl Default for TemperatureSchedule {
     fn default() -> Self {
         TemperatureSchedule {
+            noise_plies: 6,
             warm_plies: 8,
             warm_temp: 1.0,
             cool_temp: 0.1,
+            dirichlet_alpha: 0.3,
+            dirichlet_weight: 0.25,
         }
     }
 }
@@ -54,7 +62,9 @@ impl SelfPlayEngine {
 
             // Single search call gives us scores for ALL root moves.
             let result = search.search(&mut state);
-            if result.root_scores.is_empty() { break; }
+            if result.root_scores.is_empty() {
+                break;
+            }
 
             let moves = state.legal_moves();
             // Map root_scores back to move-index order.
@@ -65,7 +75,22 @@ impl SelfPlayEngine {
                 }
             }
 
-            let policy = softmax(&move_scores, temp);
+            let mut policy = softmax(&move_scores, temp);
+
+            if state.ply < self.config.temp_schedule.noise_plies && policy.len() > 1 {
+                let alpha = self.config.temp_schedule.dirichlet_alpha;
+                let weight = self.config.temp_schedule.dirichlet_weight;
+                if let Ok(gamma) = Gamma::new(alpha, 1.0) {
+                    let noise: Vec<f32> = (0..policy.len()).map(|_| gamma.sample(rng)).collect();
+                    let sum: f32 = noise.iter().sum();
+                    if sum > 0.0 {
+                        for (p, n) in policy.iter_mut().zip(noise.iter()) {
+                            *p = (1.0 - weight) * *p + weight * (*n / sum);
+                        }
+                    }
+                }
+            }
+
             let move_idx = sample_index(rng, &policy);
             let selected_move = moves[move_idx];
 
@@ -73,7 +98,14 @@ impl SelfPlayEngine {
             let record_state = state.clone();
             let search_score = result.score;
 
-            history.push((record_state, tactical_phase, policy, result.depth, result.nodes as u32, search_score));
+            history.push((
+                record_state,
+                tactical_phase,
+                policy,
+                result.depth,
+                result.nodes as u32,
+                search_score,
+            ));
 
             state.apply_move(selected_move);
         }
@@ -81,41 +113,44 @@ impl SelfPlayEngine {
         let final_result = state.result;
         let final_margin = state.flat_margin();
 
-        history.into_iter().map(|(s, phase, policy, depth, nodes, search_score)| {
-            let mut sparse_policy = Vec::new();
-            for (i, &p) in policy.iter().enumerate() {
-                if p > 0.001 {
-                    sparse_policy.push((i as u16, f16::from_f32(p)));
+        history
+            .into_iter()
+            .map(|(s, phase, policy, depth, nodes, search_score)| {
+                let mut sparse_policy = Vec::new();
+                for (i, &p) in policy.iter().enumerate() {
+                    if p > 0.001 {
+                        sparse_policy.push((i as u16, f16::from_f32(p)));
+                    }
                 }
-            }
 
-            // Search-derived soft labels. The Rust training pipeline
-            // (tak-train/data.rs) ignores these in favor of game outcomes;
-            // they are kept in the shard schema for the Python training loop
-            // and potential future use in warm-starting distillation.
-            let teacher_wdl = score_to_wdl(search_score);
-            let teacher_margin = (search_score as f32 / 500.0).clamp(-1.0, 1.0);
+                // Search-derived soft labels. The Rust training pipeline
+                // (tak-train/data.rs) ignores these in favor of game outcomes;
+                // they are kept in the shard schema for the Python training loop
+                // and potential future use in warm-starting distillation.
+                let teacher_wdl = score_to_wdl(search_score);
+                let teacher_margin = (search_score as f32 / 500.0).clamp(-1.0, 1.0);
 
-            TrainingRecord {
-                board_size: s.config.size,
-                side_to_move: s.side_to_move,
-                ply: s.ply,
-                reserves: s.reserves,
-                komi: s.config.komi,
-                half_komi: s.config.half_komi,
-                game_result: final_result,
-                flat_margin: final_margin,
-                search_depth: depth,
-                search_nodes: nodes,
-                game_id,
-                source_model_id: 0,
-                tactical_phase: phase,
-                teacher_wdl,
-                teacher_margin,
-                policy_target: sparse_policy,
-                board_data: TrainingRecord::pack_board(&s),
-            }
-        }).collect()
+                TrainingRecord {
+                    board_size: s.config.size,
+                    side_to_move: s.side_to_move,
+                    ply: s.ply,
+                    reserves: s.reserves,
+                    komi: s.config.komi,
+                    half_komi: s.config.half_komi,
+                    game_result: final_result,
+                    flat_margin: final_margin,
+                    search_depth: depth,
+                    search_nodes: nodes,
+                    game_id,
+                    source_model_id: self.config.model_id,
+                    tactical_phase: phase,
+                    teacher_wdl,
+                    teacher_margin,
+                    policy_target: sparse_policy,
+                    board_data: TrainingRecord::pack_board(&s),
+                }
+            })
+            .collect()
     }
 }
 
@@ -148,12 +183,19 @@ fn score_to_wdl(score: i32) -> [f16; 3] {
         let non_draw = 1.0 - draw;
         let win = (non_draw * win_raw) as f32;
         let loss = (non_draw * loss_raw) as f32;
-        [f16::from_f32(win), f16::from_f32(draw as f32), f16::from_f32(loss)]
+        [
+            f16::from_f32(win),
+            f16::from_f32(draw as f32),
+            f16::from_f32(loss),
+        ]
     }
 }
 
 fn softmax(scores: &[i32], temp: f32) -> Vec<f32> {
-    let mut probs: Vec<f32> = scores.iter().map(|&s| (s as f32 / (100.0 * temp)).exp()).collect();
+    let mut probs: Vec<f32> = scores
+        .iter()
+        .map(|&s| (s as f32 / (100.0 * temp)).exp())
+        .collect();
     let sum: f32 = probs.iter().sum();
     for p in &mut probs {
         *p /= sum;
@@ -189,13 +231,18 @@ mod tests {
                 tt_size_mb: 1,
             },
             temp_schedule: TemperatureSchedule::default(),
+            model_id: 0,
         };
         let _engine = SelfPlayEngine::new(config);
 
         // Verify that a single search returns root_scores for all moves.
         let mut state = GameState::new(GameConfig::standard(3));
         let mut search = PvsSearch::new(
-            SearchConfig { max_depth: 2, max_time_ms: 100, tt_size_mb: 1 },
+            SearchConfig {
+                max_depth: 2,
+                max_time_ms: 100,
+                tt_size_mb: 1,
+            },
             HeuristicEval,
         );
 
@@ -203,8 +250,11 @@ mod tests {
         let moves = state.legal_moves();
 
         assert!(result.best_move.is_some());
-        assert_eq!(result.root_scores.len(), moves.len(),
-            "root_scores should have one entry per legal move");
+        assert_eq!(
+            result.root_scores.len(),
+            moves.len(),
+            "root_scores should have one entry per legal move"
+        );
 
         let move_scores: Vec<i32> = result.root_scores.iter().map(|rs| rs.score).collect();
         let policy = softmax(&move_scores, 1.0);
@@ -251,10 +301,11 @@ mod tests {
                 tt_size_mb: 1,
             },
             temp_schedule: TemperatureSchedule::default(),
+            model_id: 0,
         };
         let engine = SelfPlayEngine::new(config);
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(42);
-        
+
         let records = engine.play_game(&mut rng, 1);
         assert!(!records.is_empty());
         assert!(records.last().unwrap().game_result.is_terminal());

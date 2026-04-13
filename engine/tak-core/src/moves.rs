@@ -7,7 +7,7 @@ use crate::templates::{DropTemplateId, TemplateTable};
 // Direction
 // ---------------------------------------------------------------------------
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u8)]
 pub enum Direction {
     North = 0,
@@ -41,7 +41,7 @@ impl Direction {
 // Move
 // ---------------------------------------------------------------------------
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug)]
 pub enum Move {
     Place {
         square: Square,
@@ -453,14 +453,8 @@ mod tests {
                 config.capstones,
             ];
 
-            let moves = MoveGen::legal_moves(
-                &board,
-                &config,
-                Color::White,
-                0,
-                &reserves,
-                &templates,
-            );
+            let moves =
+                MoveGen::legal_moves(&board, &config, Color::White, 0, &reserves, &templates);
 
             let n2 = (size as usize) * (size as usize);
             assert_eq!(
@@ -504,14 +498,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::Black,
-            1,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::Black, 1, &reserves, &templates);
 
         // 25 - 1 = 24 empty squares.
         assert_eq!(moves.len(), 24);
@@ -545,14 +532,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            0,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 0, &reserves, &templates);
 
         // Even though White has a piece on the board, no movements at ply 0.
         for m in &moves {
@@ -579,14 +559,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // 25 empty squares x (Flat + Wall + Cap) = 75 placements.
         // No movements since no pieces on board.
@@ -609,14 +582,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // 9 empty squares x (Flat + Wall) = 18 placements, no caps.
         assert_eq!(moves.len(), 18);
@@ -632,14 +598,7 @@ mod tests {
         // White has 0 stones, 1 cap.
         let reserves = [0, 1, config.stones, config.capstones];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // 25 empty squares x Cap only = 25 placements.
         assert_eq!(moves.len(), 25);
@@ -664,24 +623,14 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // Check ordering: for each consecutive pair of placements, the ordering
         // should be (square index ASC, piece_type ASC).
         let placements: Vec<_> = moves
             .iter()
             .filter_map(|m| match m {
-                Move::Place {
-                    square,
-                    piece_type,
-                } => Some((*square, *piece_type)),
+                Move::Place { square, piece_type } => Some((*square, *piece_type)),
                 _ => None,
             })
             .collect();
@@ -727,14 +676,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         let movements: Vec<_> = moves
             .iter()
@@ -792,14 +734,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // There should be a spread: pick up 1 from (2,2), go East, drop [1].
         // This is the capstone-flattens-wall move.
@@ -847,14 +782,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // Spread East picking up 2, travel 1 => drop [2] on (2,3) which has a
         // wall. Since drop_count = 2 (not 1), capstone flatten does NOT apply.
@@ -919,14 +847,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // No spread East from (2,2) should exist (flat cannot flatten wall).
         let east_spread = moves.iter().find(|m| {
@@ -969,14 +890,7 @@ mod tests {
             config.capstones - 1,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // No spread East from (2,2): target has a capstone.
         let east_spread = moves.iter().find(|m| {
@@ -1025,22 +939,13 @@ mod tests {
 
         let reserves = [config.stones - 5, 0, config.stones, config.capstones];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // All spread moves from (1,1) should have pickup <= 3.
         let spreads_from_center: Vec<_> = moves
             .iter()
             .filter_map(|m| match m {
-                Move::Spread { src, pickup, .. }
-                    if src.row() == 1 && src.col() == 1 =>
-                {
+                Move::Spread { src, pickup, .. } if src.row() == 1 && src.col() == 1 => {
                     Some(*pickup)
                 }
                 _ => None,
@@ -1084,14 +989,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         let mut seen_movement = false;
         for m in &moves {
@@ -1130,14 +1028,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         let spread_dirs: Vec<_> = moves
             .iter()
@@ -1192,14 +1083,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // White should only have spreads from (3,3), not from (2,2).
         for m in &moves {
@@ -1240,14 +1124,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // Spread East from (2,0):
         // pickup=1, travel=1 => [1] on (2,1): wall, cap flatten => LEGAL
@@ -1305,14 +1182,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // Spreads East from (2,0):
         // pickup=1 travel=1: [1] on (2,1) wall, cap flatten => LEGAL
@@ -1395,14 +1265,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // Spread East from (2,0) with pickup=2 travel=2 template [1,1]:
         // Step 1: drop 1 flat on (2,1) which is empty => OK.
@@ -1454,14 +1317,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // Spread East from (2,2) pickup=1 travel=1 [1]: drop on (2,3) which
         // has a friendly flat => legal.
@@ -1508,14 +1364,7 @@ mod tests {
             config.capstones,
         ];
 
-        let moves = MoveGen::legal_moves(
-            &board,
-            &config,
-            Color::White,
-            2,
-            &reserves,
-            &templates,
-        );
+        let moves = MoveGen::legal_moves(&board, &config, Color::White, 2, &reserves, &templates);
 
         // Spread East from (2,2) onto enemy flat => legal.
         let stack_move = moves.iter().find(|m| {

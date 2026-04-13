@@ -1,4 +1,4 @@
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u8)]
 pub enum Color {
     White = 0,
@@ -15,7 +15,7 @@ impl Color {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u8)]
 pub enum PieceType {
     Flat = 0,
@@ -25,7 +25,7 @@ pub enum PieceType {
 
 /// A piece on the board. Encodes (Color, PieceType) as color * 3 + piece_type.
 /// Stack layers below top are always Flat, so only Color is needed there.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Hash, Debug)]
 #[repr(u8)]
 pub enum Piece {
     WhiteFlat = 0,

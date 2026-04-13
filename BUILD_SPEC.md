@@ -1049,6 +1049,8 @@ test, acceptance criterion 3.14).
 
 ### 5.5) Distillation Loss (teacher → student)
 
+This stage begins only after the teacher has been bootstrapped from minimax/PVS self-play and strengthened through the iterative self-play loop.
+
 ```python
 # scalar_value is derived: wdl[0] - wdl[2] + 0.5 * margin
 # teacher_scalar is reconstructed from shard teacher_wdl and teacher_margin.
@@ -1389,29 +1391,25 @@ pub fn d4_transform_tensor(tensor: &mut [f32], transform: u8, size: u8);
 | # | Criterion | How to verify |
 |---|-----------|---------------|
 | 4.1 | Teacher net on 4x4: Elo > Anchor C (strong heuristic PVS) at 1s/move | Elo match, 200+ games |
-| 4.2 | Student net on 4x4: Elo > Anchor B (shallow heuristic PVS) at 0.5s/move | Elo match, 200+ games |
-| 4.3 | Teacher net on 5x5: Elo > Anchor B at 1s/move | Elo match, 200+ games |
+| 4.2 | Teacher net on 5x5: Elo > Anchor B at 1s/move | Elo match, 200+ games |
+| 4.3 | First full post-bootstrap iteration completes: self-play -> replay -> retrain -> gate on 4x4/5x5 | End-to-end run log |
 | 4.4 | Policy-guided move ordering: teacher search NPS improves >20% vs heuristic-only ordering | Benchmark |
-| 4.5 | Distillation: student policy KL-divergence from teacher < 0.5 nats on held-out 4x4 positions | Metric |
-| 4.6 | Browser inference: student model eval latency < 10ms in Chrome on reference machine | Benchmark |
-| 4.7a | FP32 ONNX export: trunk outputs match PyTorch within 1e-4 on 100 test positions | Numerical test |
-| 4.7b | INT8 ONNX export: WDL prediction agrees with FP32 on >95% of 100 test positions (argmax match); margin MSE < 0.01 | Quality regression test |
-| 4.8 | Training loss converges: final policy loss < 3.0, WDL loss < 0.8 | Training log |
-| 4.9 | WASM policy scorer: `score_moves` output matches PyTorch policy head within 1e-3 on 100 test positions (same trunk outputs) | Numerical parity test |
+| 4.5 | Promotion gate accepts at least one candidate over the bootstrap teacher | Promotion log |
+| 4.6 | Training loss converges: final policy loss < 3.0, WDL loss < 0.8 | Training log |
 
 ### Checkpoint 5 — Capstone-Competent 5x5
 
 | # | Criterion | How to verify |
 |---|-----------|---------------|
 | 5.1 | Teacher net on 5x5: Elo > Anchor C at 1s/move | Elo match |
-| 5.2 | Student net on 5x5: Elo > Anchor B at 0.5s/move in browser | Elo match |
+| 5.2 | Replay window on 5x5 is majority post-bootstrap teacher self-play data (>50%) | Replay stats |
 | 5.3 | Tactical suite accuracy on capstone-flatten positions: > 70% | Suite runner |
 | 5.4 | Tactical suite accuracy on road-win-in-1 positions: > 90% | Suite runner |
 | 5.5 | Tactical suite accuracy on forced-road-block positions: > 75% | Suite runner |
 | 5.6 | Auxiliary road-threat head: AUC > 0.85 on held-out data | Metric |
 | 5.7 | No 4x4 regression: teacher 4x4 Elo does not drop by more than 50 Elo | Elo match |
-| 5.8 | Student INT8 model size < 600 KB | File size check |
-| 5.9 | Browser inference + search: median move time < 2s on 5x5 at reasonable quality | Benchmark |
+| 5.8 | Native teacher-guided search: median move time < 2s on 5x5 at reasonable quality | Benchmark |
+| 5.9 | At least two successful post-bootstrap teacher promotions on 5x5 | Promotion log |
 
 ### Checkpoint 6 — 6x6 Mainline Push
 
@@ -1427,6 +1425,13 @@ pub fn d4_transform_tensor(tensor: &mut [f32], transform: u8, size: u8);
 | 6.8 | Replay buffer: 6x6 fraction within 50–60% of total window | Metric |
 | 6.9 | Training throughput: > 5,000 positions/sec on 3090 with mixed precision | Benchmark |
 | 6.10 | Gating: at least 3 successful promotions during the 6x6 push, each passing tactical + latency gates | Promotion log |
+| 6.11 | Distillation: student policy KL-divergence from teacher < 0.5 nats on held-out 6x6 positions | Metric |
+| 6.12 | Browser inference: student model eval latency < 10ms in Chrome on reference machine | Benchmark |
+| 6.13 | FP32 ONNX export: trunk outputs match PyTorch within 1e-4 on 100 test positions | Numerical test |
+| 6.14 | INT8 ONNX export: WDL prediction agrees with FP32 on >95% of 100 test positions (argmax match); margin MSE < 0.01 | Quality regression test |
+| 6.15 | WASM policy scorer: `score_moves` output matches PyTorch policy head within 1e-3 on 100 test positions (same trunk outputs) | Numerical parity test |
+| 6.16 | Student INT8 model size < 600 KB | File size check |
+| 6.17 | Browser inference + search: median move time < 2s on 5x5 and < 4s on 6x6 at reasonable quality | Benchmark |
 
 ### Checkpoint 7 — Production Browser Player
 

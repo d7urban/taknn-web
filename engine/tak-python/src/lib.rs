@@ -1,18 +1,18 @@
+use numpy::PyArray3;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use tak_core::state::{GameResult, GameState};
-use tak_core::rules::GameConfig;
-use tak_core::symmetry::D4;
-use tak_core::descriptor;
-use tak_core::tactical::{TacticalFlags, SpatialLabels};
-use tak_core::tps;
-use tak_data::shard::{ShardReader, ShardWriter};
-use tak_data::selfplay::{SelfPlayConfig, SelfPlayEngine, TemperatureSchedule};
-use tak_search::pvs::{PvsSearch, SearchConfig};
-use tak_search::eval::HeuristicEval;
-use numpy::PyArray3;
 use rand::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
+use tak_core::descriptor;
+use tak_core::rules::GameConfig;
+use tak_core::state::{GameResult, GameState};
+use tak_core::symmetry::D4;
+use tak_core::tactical::{SpatialLabels, TacticalFlags};
+use tak_core::tps;
+use tak_data::selfplay::{SelfPlayConfig, SelfPlayEngine, TemperatureSchedule};
+use tak_data::shard::{ShardReader, ShardWriter};
+use tak_search::eval::HeuristicEval;
+use tak_search::pvs::{PvsSearch, SearchConfig};
 
 #[pyclass]
 pub struct PyGameState {
@@ -25,18 +25,27 @@ impl PyGameState {
     #[pyo3(signature = (size, tps_str=None))]
     fn new(size: u8, tps_str: Option<&str>) -> PyResult<Self> {
         let inner = if let Some(s) = tps_str {
-            tps::from_tps(s).map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Invalid TPS: {e}")))?
+            tps::from_tps(s)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Invalid TPS: {e}")))?
         } else {
             GameState::new(GameConfig::standard(size))
         };
         Ok(PyGameState { inner })
     }
 
-    fn size(&self) -> u8 { self.inner.config.size }
-    fn ply(&self) -> u16 { self.inner.ply }
-    fn side_to_move(&self) -> u8 { self.inner.side_to_move as u8 }
+    fn size(&self) -> u8 {
+        self.inner.config.size
+    }
+    fn ply(&self) -> u16 {
+        self.inner.ply
+    }
+    fn side_to_move(&self) -> u8 {
+        self.inner.side_to_move as u8
+    }
 
-    fn is_terminal(&self) -> bool { self.inner.result.is_terminal() }
+    fn is_terminal(&self) -> bool {
+        self.inner.result.is_terminal()
+    }
 
     fn result(&self) -> u8 {
         match self.inner.result {
@@ -61,7 +70,9 @@ impl PyGameState {
     fn apply_move(&mut self, move_index: usize) -> PyResult<()> {
         let moves = self.inner.legal_moves();
         if move_index >= moves.len() {
-            return Err(pyo3::exceptions::PyIndexError::new_err("move index out of range"));
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                "move index out of range",
+            ));
         }
         self.inner.apply_move(moves[move_index]);
         Ok(())
@@ -78,9 +89,8 @@ impl PyGameState {
     /// Returns a mapping: original_move_index -> transformed_move_index
     /// for D4 symmetry transform (0..7).
     fn get_transformation_map(&self, transform: u8) -> PyResult<Vec<usize>> {
-        let sym = D4::from_u8(transform).ok_or_else(|| {
-            pyo3::exceptions::PyValueError::new_err("transform must be 0..7")
-        })?;
+        let sym = D4::from_u8(transform)
+            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("transform must be 0..7"))?;
         let size = self.inner.config.size;
         let original_moves = self.inner.legal_moves();
         let mut transformed_state = self.inner.clone();
@@ -104,16 +114,22 @@ impl PyGameState {
     /// Encode current board state as a [31, 8, 8] numpy array.
     fn encode_tensor<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f32>>> {
         let tensor = tak_core::tensor::BoardTensor::encode(&self.inner);
-        Ok(PyArray3::from_vec3(
-            py,
-            &tensor_to_vec3(&tensor.data),
-        )?)
+        Ok(PyArray3::from_vec3(py, &tensor_to_vec3(&tensor.data))?)
     }
 
     /// Run PVS search with heuristic eval. Returns (best_move_index, score, depth, nodes).
     #[pyo3(signature = (max_depth=20, max_time_ms=1000, tt_size_mb=16))]
-    fn search_move(&mut self, max_depth: u8, max_time_ms: u64, tt_size_mb: usize) -> PyResult<(usize, i32, u8, u64)> {
-        let config = SearchConfig { max_depth, max_time_ms, tt_size_mb };
+    fn search_move(
+        &mut self,
+        max_depth: u8,
+        max_time_ms: u64,
+        tt_size_mb: usize,
+    ) -> PyResult<(usize, i32, u8, u64)> {
+        let config = SearchConfig {
+            max_depth,
+            max_time_ms,
+            tt_size_mb,
+        };
         let mut search = PvsSearch::new(config, HeuristicEval);
         let result = search.search(&mut self.inner);
         let moves = self.inner.legal_moves();
@@ -129,7 +145,10 @@ impl PyGameState {
 
     /// Encode board tensors for all positions after each legal move.
     /// Returns list of [31, 8, 8] numpy arrays (one per legal move).
-    fn encode_children_tensors<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyArray3<f32>>>> {
+    fn encode_children_tensors<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Vec<Bound<'py, PyArray3<f32>>>> {
         let moves = self.inner.legal_moves();
         let mut arrays = Vec::with_capacity(moves.len());
         for &mv in &moves {
@@ -255,8 +274,11 @@ impl PyShardReader {
 
                 let policy_indices: Vec<u16> =
                     record.policy_target.iter().map(|(i, _)| *i).collect();
-                let policy_probs: Vec<f32> =
-                    record.policy_target.iter().map(|(_, p)| p.to_f32()).collect();
+                let policy_probs: Vec<f32> = record
+                    .policy_target
+                    .iter()
+                    .map(|(_, p)| p.to_f32())
+                    .collect();
                 dict.set_item("policy_indices", policy_indices)?;
                 dict.set_item("policy_probs", policy_probs)?;
 
@@ -268,11 +290,14 @@ impl PyShardReader {
                 let arr = PyArray3::from_vec3(py, &tensor_to_vec3(&tensor.data))?;
                 dict.set_item("board_tensor", arr)?;
                 dict.set_item("tps", tps::to_tps(&state))?;
-                dict.set_item("tactical_phase", match record.tactical_phase {
-                    tak_core::tactical::TacticalPhase::Quiet => 0u8,
-                    tak_core::tactical::TacticalPhase::SemiTactical => 1,
-                    tak_core::tactical::TacticalPhase::Tactical => 2,
-                })?;
+                dict.set_item(
+                    "tactical_phase",
+                    match record.tactical_phase {
+                        tak_core::tactical::TacticalPhase::Quiet => 0u8,
+                        tak_core::tactical::TacticalPhase::SemiTactical => 1,
+                        tak_core::tactical::TacticalPhase::Tactical => 2,
+                    },
+                )?;
 
                 Ok(Some(dict))
             }
@@ -349,14 +374,15 @@ fn generate_shard(
             tt_size_mb: 4,
         },
         temp_schedule: TemperatureSchedule::default(),
+        model_id: 0,
     };
     let engine = SelfPlayEngine::new(config);
     let mut rng = Xoshiro256PlusPlus::seed_from_u64(seed);
 
     let file = std::fs::File::create(output_path)
         .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("{e}")))?;
-    let mut writer = ShardWriter::new(file)
-        .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("{e}")))?;
+    let mut writer =
+        ShardWriter::new(file).map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("{e}")))?;
 
     let mut total_records = 0;
     for game_id in 0..num_games {

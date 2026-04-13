@@ -12,5 +12,7 @@ pub mod distill;
 pub mod checkpoint;
 #[cfg(feature = "nn")]
 pub mod export;
+#[cfg(feature = "nn")]
+pub mod iterate;
 
 pub mod config;

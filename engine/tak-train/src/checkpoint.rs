@@ -26,10 +26,35 @@ pub fn save_weights(vs: &nn::VarStore, path: &Path) -> anyhow::Result<()> {
 
 /// Load weights from file into `vs`, ignoring missing keys.
 pub fn load_weights(vs: &mut nn::VarStore, path: &Path) -> anyhow::Result<Vec<String>> {
-    let missing = vs
-        .load_partial(path)
-        .with_context(|| format!("load_weights: {}", path.display()))?;
-    Ok(missing)
+    match vs.load_partial(path) {
+        Ok(missing) => Ok(missing),
+        Err(primary_err) => {
+            let fallback = safetensors_fallback(path);
+            if let Some(fallback_path) = fallback.filter(|p| p.exists()) {
+                eprintln!(
+                    "Warning: failed to load {}; retrying with {}",
+                    path.display(),
+                    fallback_path.display()
+                );
+                return vs.load_partial(&fallback_path).with_context(|| {
+                    format!(
+                        "load_weights fallback: {} -> {}",
+                        path.display(),
+                        fallback_path.display()
+                    )
+                });
+            }
+
+            Err(primary_err).with_context(|| format!("load_weights: {}", path.display()))
+        }
+    }
+}
+
+fn safetensors_fallback(path: &Path) -> Option<PathBuf> {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("pt") => Some(path.with_extension("safetensors")),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +93,7 @@ pub fn load_training_state(dir: &Path) -> TrainingState {
 
 /// Save a full checkpoint: weights + training state.
 ///
-/// Writes atomically: `{dir}/{name}.pt` + `training_state.json`.
+/// Writes atomically: `{dir}/{name}.safetensors` + `training_state.json`.
 pub fn save_checkpoint(
     vs: &nn::VarStore,
     state: &TrainingState,
@@ -76,13 +101,12 @@ pub fn save_checkpoint(
     name: &str,
 ) -> anyhow::Result<PathBuf> {
     fs::create_dir_all(dir)?;
-    let weights_name = format!("{name}.pt");
+    let weights_name = format!("{name}.safetensors");
     let tmp_path = dir.join(format!("tmp_{weights_name}"));
     let final_path = dir.join(&weights_name);
 
     save_weights(vs, &tmp_path)?;
-    fs::rename(&tmp_path, &final_path)
-        .with_context(|| format!("rename tmp → {weights_name}"))?;
+    fs::rename(&tmp_path, &final_path).with_context(|| format!("rename tmp → {weights_name}"))?;
 
     save_training_state(dir, state)?;
     Ok(final_path)
@@ -94,7 +118,8 @@ pub fn load_checkpoint(
     dir: &Path,
     name: &str,
 ) -> anyhow::Result<TrainingState> {
-    let weights_path = dir.join(format!("{name}.pt"));
+    let weights_path =
+        best_named_checkpoint_path(dir, name).unwrap_or(dir.join(format!("{name}.safetensors")));
     let missing = load_weights(vs, &weights_path)?;
     if !missing.is_empty() {
         eprintln!(
@@ -108,7 +133,16 @@ pub fn load_checkpoint(
 
 /// Return path of best checkpoint if it exists.
 pub fn best_checkpoint_path(dir: &Path) -> Option<PathBuf> {
-    let p = dir.join("best.pt");
+    best_named_checkpoint_path(dir, "best")
+}
+
+fn best_named_checkpoint_path(dir: &Path, name: &str) -> Option<PathBuf> {
+    let s = dir.join(format!("{name}.safetensors"));
+    if s.exists() {
+        return Some(s);
+    }
+
+    let p = dir.join(format!("{name}.pt"));
     if p.exists() {
         Some(p)
     } else {
