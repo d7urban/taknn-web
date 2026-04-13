@@ -31,9 +31,9 @@ struct Args {
     #[arg(long, default_value = "checkpoints")]
     checkpoint_dir: PathBuf,
 
-    /// Board size to iterate on.
+    /// Primary board size used for candidate-vs-incumbent evaluation matches.
     #[arg(long, default_value_t = 6)]
-    board_size: u8,
+    primary_board_size: u8,
 
     /// Number of self-play / retrain / promote iterations to run.
     #[arg(long, default_value_t = 5)]
@@ -169,7 +169,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let config = TeacherIterationConfig {
-        primary_size: args.board_size,
+        primary_size: args.primary_board_size,
         iterations: args.iterations,
         games_per_iteration: args.games_per_iteration,
         replay_window_shards: args.replay_window_shards,
@@ -200,4 +200,30 @@ fn main() -> anyhow::Result<()> {
     };
 
     run_teacher_iteration_loop(&config, device)
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::error::ErrorKind;
+    use clap::Parser;
+
+    use super::Args;
+
+    #[test]
+    fn parses_primary_board_size_flag() {
+        let args = Args::try_parse_from(["tak-iterate", "--primary-board-size", "7"])
+            .expect("primary board size flag should parse");
+
+        assert_eq!(args.primary_board_size, 7);
+    }
+
+    #[test]
+    fn rejects_legacy_board_size_flag() {
+        let err = match Args::try_parse_from(["tak-iterate", "--board-size", "7"]) {
+            Ok(_) => panic!("legacy board size flag should be rejected"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.kind(), ErrorKind::UnknownArgument);
+    }
 }

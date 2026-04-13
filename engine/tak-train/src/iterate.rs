@@ -492,7 +492,7 @@ fn generate_selfplay_shard(
     let evaluator = evaluator_service.evaluator();
     let game_config = SelfPlayGameConfig {
         board_size: config.board_size,
-        search_config: config.search_config.clone(),
+        search_config: config.search_config,
         temperature: config.temperature,
         model_id: config.model_id,
     };
@@ -516,7 +516,7 @@ fn generate_selfplay_shard(
                 let mut rng = StdRng::seed_from_u64(config.seed.wrapping_add(game_id as u64));
                 records.extend(play_selfplay_game(
                     evaluator.clone(),
-                    game_config.clone(),
+                    game_config,
                     &mut rng,
                     game_id,
                     std::sync::Arc::clone(&family_counts),
@@ -579,7 +579,7 @@ fn play_selfplay_game<R: Rng>(
 ) -> Vec<TrainingRecord> {
     loop {
         let mut state = GameState::new(GameConfig::standard(config.board_size));
-        let mut search = PvsSearch::new(config.search_config.clone(), evaluator.clone());
+        let mut search = PvsSearch::new(config.search_config, evaluator.clone());
         let mut history = Vec::new();
         let mut plies_so_far = Vec::new();
         let mut aborted = false;

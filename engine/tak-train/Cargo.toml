@@ -21,6 +21,7 @@ rayon = "1.10"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 half = { workspace = true }
+rand_distr = "0.5"
 
 [[bin]]
 name = "tak-train"

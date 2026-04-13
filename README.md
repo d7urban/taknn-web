@@ -125,7 +125,7 @@ To iteratively improve the network using AlphaZero-style self-play, run the `tak
 ```bash
 cd engine
 cargo run --release -p tak-train --features nn --bin tak-iterate -- \
-    --board-size 6 \
+    --primary-board-size 6 \
     --iterations 10 \
     --games-per-iteration 200 \
     --eval-games 20 \
