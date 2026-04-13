@@ -6,10 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "copy-wasm": "cp ../engine/tak-wasm/pkg/tak_wasm_bg.wasm public/wasm/ && cp ../engine/tak-wasm/pkg/tak_wasm.js src/engine/ && cp ../engine/tak-wasm/pkg/tak_wasm.d.ts src/engine/"
+    "copy-wasm": "mkdir -p public/wasm && cp ../engine/tak-wasm/pkg/tak_wasm_bg.wasm public/wasm/ && cp ../engine/tak-wasm/pkg/tak_wasm.js public/wasm/ && cp ../engine/tak-wasm/pkg/tak_wasm.d.ts src/engine/"
   },
   "dependencies": {
     "next": "^15.0.0",
+    "onnxruntime-web": "^1.22.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

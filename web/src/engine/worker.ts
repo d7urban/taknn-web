@@ -4,6 +4,8 @@
 ///   Main → Worker: { type: "search", tps: string, maxDepth: number, timeMs: number }
 ///   Worker → Main: { type: "result", ...SearchResultInfo } | { type: "error", message: string }
 
+import { selectMoveWithNeural } from "./inference";
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let wasmModule: any = null;
 
@@ -28,7 +30,11 @@ self.onmessage = async (e: MessageEvent) => {
       const mod = await initWasm();
       const game = mod.TakGame.fromTps(msg.tps);
 
-      const result = game.botMove(msg.maxDepth || 20, msg.timeMs || 3000);
+      const neuralResult = await selectMoveWithNeural(mod, game);
+      const result = neuralResult ?? {
+        ...game.botMove(msg.maxDepth || 20, msg.timeMs || 3000),
+        engineMode: "heuristic",
+      };
 
       self.postMessage({
         type: "result",

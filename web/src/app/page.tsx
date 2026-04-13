@@ -37,6 +37,8 @@ export type SearchInfo = {
   nodes: number;
   pv: string[];
   ttHits: number;
+  engineMode: "neural" | "heuristic";
+  modelName?: string;
 };
 
 export type SpreadState = {

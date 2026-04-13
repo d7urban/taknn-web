@@ -1,5 +1,54 @@
 /* @ts-self-types="./tak_wasm.d.ts" */
 
+export class NeuralPolicy {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        NeuralPolicyFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_neuralpolicy_free(ptr, 0);
+    }
+    /**
+     * @param {Uint8Array} buffer
+     */
+    constructor(buffer) {
+        const ptr0 = passArray8ToWasm0(buffer, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.neuralpolicy_new(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        NeuralPolicyFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Evaluates the policy MLP for the given move descriptors using the spatial and global pools.
+     * `spatial_pool`: [64, 8, 8] (or similar) from the ONNX trunk.
+     * `global_pool`: [64] from the ONNX trunk.
+     * @param {TakGame} game
+     * @param {Float32Array} spatial_pool
+     * @param {Float32Array} global_pool
+     * @returns {Float32Array}
+     */
+    scoreMoves(game, spatial_pool, global_pool) {
+        _assertClass(game, TakGame);
+        const ptr0 = passArrayF32ToWasm0(spatial_pool, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(global_pool, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.neuralpolicy_scoreMoves(this.__wbg_ptr, game.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+}
+if (Symbol.dispose) NeuralPolicy.prototype[Symbol.dispose] = NeuralPolicy.prototype.free;
+
 export class TakGame {
     static __wrap(ptr) {
         ptr = ptr >>> 0;
@@ -52,6 +101,14 @@ export class TakGame {
             throw takeFromExternrefTable0(ret[1]);
         }
         return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Encode the current position as the NN board tensor.
+     * @returns {Float32Array}
+     */
+    encodeBoard() {
+        const ret = wasm.takgame_encodeBoard(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Create a game from a TPS string.
@@ -186,6 +243,14 @@ export class TakGame {
         return ret;
     }
     /**
+     * Get the size-id expected by the NN trunk input (3x3 -> 0, ..., 8x8 -> 5).
+     * @returns {number}
+     */
+    sizeId() {
+        const ret = wasm.takgame_sizeId(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * Undo the last move. Returns false if no moves to undo.
      * @returns {boolean}
      */
@@ -231,6 +296,10 @@ function __wbg_get_imports() {
                 wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
             }
         },
+        __wbg_length_adfb9188ac31064e: function(arg0) {
+            const ret = arg0.length;
+            return ret;
+        },
         __wbg_new_227d7c05414eb861: function() {
             const ret = new Error();
             return ret;
@@ -243,9 +312,16 @@ function __wbg_get_imports() {
             const ret = new Object();
             return ret;
         },
+        __wbg_new_with_length_e8e940f816352c85: function(arg0) {
+            const ret = new Float32Array(arg0 >>> 0);
+            return ret;
+        },
         __wbg_now_cd850b0a28a6e656: function() {
             const ret = Date.now();
             return ret;
+        },
+        __wbg_set_1aeb36710437a495: function(arg0, arg1, arg2) {
+            arg0.set(getArrayF32FromWasm0(arg1, arg2));
         },
         __wbg_set_6be42768c690e380: function(arg0, arg1, arg2) {
             arg0[arg1] = arg2;
@@ -291,9 +367,23 @@ function __wbg_get_imports() {
     };
 }
 
+const NeuralPolicyFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_neuralpolicy_free(ptr >>> 0, 1));
 const TakGameFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_takgame_free(ptr >>> 0, 1));
+
+function _assertClass(instance, klass) {
+    if (!(instance instanceof klass)) {
+        throw new Error(`expected instance of ${klass.name}`);
+    }
+}
+
+function getArrayF32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
 
 let cachedDataViewMemory0 = null;
 function getDataViewMemory0() {
@@ -301,6 +391,14 @@ function getDataViewMemory0() {
         cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
     }
     return cachedDataViewMemory0;
+}
+
+let cachedFloat32ArrayMemory0 = null;
+function getFloat32ArrayMemory0() {
+    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.byteLength === 0) {
+        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
+    }
+    return cachedFloat32ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -314,6 +412,20 @@ function getUint8ArrayMemory0() {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArrayF32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getFloat32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passStringToWasm0(arg, malloc, realloc) {
@@ -393,6 +505,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
+    cachedFloat32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

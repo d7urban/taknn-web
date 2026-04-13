@@ -143,6 +143,22 @@ export default function Controls({
             color: "#555",
           }}
         >
+          <div style={{ marginBottom: 4 }}>
+            <b>Engine:</b>{" "}
+            <span
+              style={{
+                display: "inline-block",
+                padding: "1px 6px",
+                borderRadius: 999,
+                backgroundColor: lastSearchInfo.engineMode === "neural" ? "#d9f2e3" : "#ececec",
+                color: lastSearchInfo.engineMode === "neural" ? "#1f6b3a" : "#666",
+                fontWeight: 600,
+              }}
+            >
+              {lastSearchInfo.engineMode}
+              {lastSearchInfo.modelName ? ` (${lastSearchInfo.modelName})` : ""}
+            </span>
+          </div>
           depth {lastSearchInfo.depth} | score {lastSearchInfo.score} | {lastSearchInfo.nodes.toLocaleString()} nodes
           {lastSearchInfo.pv.length > 0 && (
             <span> | PV: {lastSearchInfo.pv.slice(0, 5).join(" ")}</span>

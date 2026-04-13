@@ -64,13 +64,11 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let model_type = args.model.as_deref().unwrap_or(
-        if net_cfg.channels >= 128 {
-            "teacher"
-        } else {
-            "student"
-        },
-    );
+    let model_type = args.model.as_deref().unwrap_or(if net_cfg.channels >= 128 {
+        "teacher"
+    } else {
+        "student"
+    });
 
     println!(
         "Model: {model_type} ({}ch × {} blocks, FiLM dim {})",
@@ -99,7 +97,7 @@ fn main() -> anyhow::Result<()> {
 
     // ONNX conversion script
     if !args.skip_onnx {
-        let checkpoint_path = args.out.join(format!("{model_type}.pt"));
+        let checkpoint_path = args.out.join(format!("{model_type}.safetensors"));
         let onnx_path = args.out.join(format!("{model_type}_trunk.onnx"));
         let script_path = args.out.join(format!("convert_{model_type}_onnx.py"));
         export::generate_onnx_script(&net_cfg, &checkpoint_path, &onnx_path, &script_path)?;
