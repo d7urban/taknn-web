@@ -5,7 +5,6 @@ members = [
     "tak-search",
     "tak-data",
     "tak-wasm",
-    "tak-python",
     "tak-train",
 ]
 
