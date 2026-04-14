@@ -4,6 +4,7 @@
 //! Positive = good for the side to move.
 
 use tak_core::board::{Board, Square};
+use tak_core::moves::MoveGen;
 use tak_core::piece::{Color, PieceType};
 use tak_core::state::GameState;
 
@@ -35,6 +36,8 @@ const W_CAP_CENTER: Score = 30;
 const W_STACK_CONTROL: Score = 15;
 const W_RESERVE: Score = 3;
 const W_HARD_CAP_FLAT: Score = 60;
+const W_MOBILITY: Score = 3;
+const W_CAP_IN_HAND: Score = 80;
 
 /// Heuristic evaluator for Checkpoint 2.
 pub struct HeuristicEval;
@@ -103,14 +106,14 @@ fn eval_for_white(state: &GameState) -> Score {
         }
     }
 
-    // Flat count difference (the key material metric in Tak).
-    score += (white_flats - black_flats) * W_FLAT_COUNT;
+    // Flat-race equity includes komi, not just raw top-flat count.
+    let flat_equity_twice = flat_equity_twice(state.config, white_flats, black_flats);
+    score += flat_equity_twice * W_FLAT_COUNT / 2;
 
     // Hard cap on flat advantage to avoid overvaluing flat leads
     // when the position is tactically dangerous.
-    let flat_diff = white_flats - black_flats;
-    if flat_diff.abs() > 3 {
-        score += if flat_diff > 0 {
+    if flat_equity_twice.abs() > 6 {
+        score += if flat_equity_twice > 0 {
             W_HARD_CAP_FLAT
         } else {
             -W_HARD_CAP_FLAT
@@ -126,14 +129,59 @@ fn eval_for_white(state: &GameState) -> Score {
     let b_reserves = state.reserves[2] as Score + state.reserves[3] as Score;
     score += (w_reserves - b_reserves) * W_RESERVE;
 
+    // Capstones in hand remain strategically valuable deep into the game.
+    score += (state.reserves[1] as Score - state.reserves[3] as Score) * W_CAP_IN_HAND;
+
+    // Mobility captures whether a side can actually convert its material and
+    // road potential into options on the board.
+    let (white_mobility, black_mobility) = mobility_counts(state);
+    score += (white_mobility - black_mobility) * W_MOBILITY;
+
     score
+}
+
+fn mobility_counts(state: &GameState) -> (Score, Score) {
+    let ply = state.ply.max(2);
+    let white = MoveGen::legal_moves_for(
+        &state.board,
+        &state.config,
+        Color::White,
+        ply,
+        &state.reserves,
+        &state.templates,
+    )
+    .len() as Score;
+    let black = MoveGen::legal_moves_for(
+        &state.board,
+        &state.config,
+        Color::Black,
+        ply,
+        &state.reserves,
+        &state.templates,
+    )
+    .len() as Score;
+    (white, black)
+}
+
+fn flat_equity_twice(
+    config: tak_core::rules::GameConfig,
+    white_flats: i32,
+    black_flats: i32,
+) -> Score {
+    (white_flats - black_flats) * 2
+        - (config.komi as Score) * 2
+        - if config.half_komi { 1 } else { 0 }
 }
 
 /// Returns a center weight [0..4] — higher for more central squares.
 fn center_weight(r: u8, c: u8, size: u8) -> Score {
     let half = size as Score / 2;
-    let dr = (r as Score - half).abs().min((r as Score - (half - 1)).abs());
-    let dc = (c as Score - half).abs().min((c as Score - (half - 1)).abs());
+    let dr = (r as Score - half)
+        .abs()
+        .min((r as Score - (half - 1)).abs());
+    let dc = (c as Score - half)
+        .abs()
+        .min((c as Score - (half - 1)).abs());
     let max_dist = half;
     let dist = dr + dc;
     (max_dist * 2 - dist).max(0)
@@ -176,7 +224,13 @@ fn road_connectivity(board: &Board, size: u8) -> (u8, u8) {
         x
     }
 
-    fn union(parent: &mut [u8; 64], rank: &mut [u8; 64], group_size: &mut [u8; 64], a: usize, b: usize) {
+    fn union(
+        parent: &mut [u8; 64],
+        rank: &mut [u8; 64],
+        group_size: &mut [u8; 64],
+        a: usize,
+        b: usize,
+    ) {
         let ra = find(parent, a);
         let rb = find(parent, b);
         if ra == rb {
@@ -287,18 +341,34 @@ mod tests {
         state.side_to_move = Color::White;
 
         // Place some white flats.
-        state.board.get_mut(Square::from_rc(0, 0)).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(0, 1)).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(0, 2)).push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 0))
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 1))
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 2))
+            .push(Piece::new(Color::White, PieceType::Flat));
         state.reserves[0] -= 3;
 
         // Place one black flat.
-        state.board.get_mut(Square::from_rc(4, 4)).push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(4, 4))
+            .push(Piece::new(Color::Black, PieceType::Flat));
         state.reserves[2] -= 1;
 
         let eval = HeuristicEval;
         let score = eval.evaluate(&state);
-        assert!(score > 0, "white should have advantage with more flats, got {}", score);
+        assert!(
+            score > 0,
+            "white should have advantage with more flats, got {}",
+            score
+        );
     }
 
     #[test]
@@ -310,19 +380,124 @@ mod tests {
 
         // Connected line of 4 white flats.
         for c in 0..4 {
-            state.board.get_mut(Square::from_rc(2, c)).push(Piece::new(Color::White, PieceType::Flat));
+            state
+                .board
+                .get_mut(Square::from_rc(2, c))
+                .push(Piece::new(Color::White, PieceType::Flat));
             state.reserves[0] -= 1;
         }
         // 4 scattered black flats (not connected).
-        state.board.get_mut(Square::from_rc(0, 0)).push(Piece::new(Color::Black, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(1, 2)).push(Piece::new(Color::Black, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(3, 1)).push(Piece::new(Color::Black, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(4, 4)).push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 0))
+            .push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(1, 2))
+            .push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(3, 1))
+            .push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(4, 4))
+            .push(Piece::new(Color::Black, PieceType::Flat));
         state.reserves[2] -= 4;
 
         let eval = HeuristicEval;
         let score = eval.evaluate(&state);
         // White has 4 connected vs black has 4 scattered — white should have road bonus.
-        assert!(score > 0, "white should have road connectivity advantage, got {}", score);
+        assert!(
+            score > 0,
+            "white should have road connectivity advantage, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn eval_rewards_capstone_in_hand() {
+        let config = GameConfig::standard(6);
+        let mut state = GameState::new(config);
+        state.ply = 10;
+        state.side_to_move = Color::White;
+        state.reserves[1] = 1;
+        state.reserves[3] = 0;
+
+        let eval = HeuristicEval;
+        let score = eval.evaluate(&state);
+        assert!(
+            score > 0,
+            "white should be rewarded for capstone in hand, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn eval_respects_komi_in_flat_race() {
+        let mut config = GameConfig::standard(6);
+        config.komi = 2;
+        let mut state = GameState::new(config);
+        state.ply = 8;
+        state.side_to_move = Color::White;
+
+        state
+            .board
+            .get_mut(Square::from_rc(0, 0))
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 1))
+            .push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 2))
+            .push(Piece::new(Color::Black, PieceType::Flat));
+        state.reserves[0] -= 1;
+        state.reserves[2] -= 2;
+
+        let eval = HeuristicEval;
+        let score = eval.evaluate(&state);
+        assert!(
+            score < 0,
+            "black should lead the flat race with komi, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn eval_rewards_greater_mobility() {
+        let config = GameConfig::standard(5);
+        let mut state = GameState::new(config);
+        state.ply = 6;
+        state.side_to_move = Color::White;
+
+        // White keeps a mobile flat stack while Black's only piece is a wall.
+        state
+            .board
+            .get_mut(Square::from_rc(2, 2))
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 0))
+            .push(Piece::new(Color::Black, PieceType::Wall));
+        state.reserves[0] -= 1;
+        state.reserves[2] -= 1;
+
+        let (white_mobility, black_mobility) = mobility_counts(&state);
+        assert!(
+            white_mobility > black_mobility,
+            "white should have more mobility (white={}, black={})",
+            white_mobility,
+            black_mobility
+        );
+
+        let eval = HeuristicEval;
+        let score = eval.evaluate(&state);
+        assert!(
+            score > 0,
+            "white should have the mobility advantage, got {}",
+            score
+        );
     }
 }

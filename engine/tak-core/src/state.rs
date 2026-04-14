@@ -2,7 +2,7 @@
 //! apply/undo move, road detection, and flat win detection.
 
 use crate::board::{Board, Square, Stack};
-use crate::moves::{Direction, Move, MoveList, MoveGen};
+use crate::moves::{Direction, Move, MoveGen, MoveList};
 use crate::piece::{Color, Piece, PieceType};
 use crate::rules::GameConfig;
 use crate::templates::TemplateTable;
@@ -98,7 +98,12 @@ impl GameState {
     /// Create a new game in the starting position.
     pub fn new(config: GameConfig) -> Self {
         let board = Board::empty();
-        let reserves = [config.stones, config.capstones, config.stones, config.capstones];
+        let reserves = [
+            config.stones,
+            config.capstones,
+            config.stones,
+            config.capstones,
+        ];
         let zobrist = zobrist::compute_full(&board, config.size, Color::White, &reserves);
 
         let templates = TemplateTable::build(config.size);
@@ -125,15 +130,20 @@ impl GameState {
         self.ply < 2
     }
 
-    /// Returns white_flats - black_flats + komi at game end.
+    /// Returns the flat margin from White's perspective.
+    /// Positive means White leads the flat race; positive komi favors Black.
     pub fn flat_margin(&self) -> i16 {
         let (white, black) = self.board.flat_counts(self.config.size);
-        let mut margin = white as i16 - black as i16;
-        margin += self.config.komi as i16;
-        // If half-komi is set, and it's a draw on whole points, it's effectively 0.5.
-        // We handle this by returning non-zero. For TrainingRecord we mostly need the sign
-        // and a rough magnitude.
-        margin
+        let doubled_margin = (white as i16 - black as i16) * 2
+            - (self.config.komi as i16) * 2
+            - if self.config.half_komi { 1 } else { 0 };
+
+        // Preserve the sign of half-komi positions while keeping an integer score.
+        if doubled_margin >= 0 {
+            (doubled_margin + 1) / 2
+        } else {
+            (doubled_margin - 1) / 2
+        }
     }
 
     /// Generate all legal moves for the current side to move.
@@ -165,7 +175,12 @@ impl GameState {
             Move::Place { square, piece_type } => {
                 self.apply_place(square, piece_type, mover, &mut undo);
             }
-            Move::Spread { src, dir, pickup, template } => {
+            Move::Spread {
+                src,
+                dir,
+                pickup,
+                template,
+            } => {
                 self.apply_spread(src, dir, pickup, template, &mut undo);
             }
         }
@@ -193,7 +208,8 @@ impl GameState {
         undo: &mut UndoInfo,
     ) {
         // Snapshot the target stack.
-        undo.stack_snapshots.push((square, self.board.get(square).clone()));
+        undo.stack_snapshots
+            .push((square, self.board.get(square).clone()));
 
         // Determine which piece to place and whose reserves to decrement.
         let (place_color, place_type) = if self.is_opening_phase() {
@@ -210,7 +226,12 @@ impl GameState {
         // Decrement reserves.
         let res_idx = Self::reserve_idx(place_color, place_type);
         let old_reserve = self.reserves[res_idx];
-        debug_assert!(old_reserve > 0, "no reserves left for {:?} {:?}", place_color, place_type);
+        debug_assert!(
+            old_reserve > 0,
+            "no reserves left for {:?} {:?}",
+            place_color,
+            place_type
+        );
         self.zobrist ^= zobrist::hash_reserve_diff(res_idx, old_reserve, old_reserve - 1);
         self.reserves[res_idx] = old_reserve - 1;
 
@@ -238,7 +259,8 @@ impl GameState {
         let num_steps = drops.len();
 
         // Snapshot source stack.
-        undo.stack_snapshots.push((src, self.board.get(src).clone()));
+        undo.stack_snapshots
+            .push((src, self.board.get(src).clone()));
 
         // Snapshot all target squares along the path.
         let mut target_squares: Vec<Square> = Vec::with_capacity(num_steps);
@@ -302,7 +324,11 @@ impl GameState {
             }
             carry_idx = end_idx;
         }
-        debug_assert_eq!(carry_idx, carried.len(), "all carried pieces must be dropped");
+        debug_assert_eq!(
+            carry_idx,
+            carried.len(),
+            "all carried pieces must be dropped"
+        );
 
         // Update zobrist for all affected stacks.
         self.zobrist ^= zobrist::hash_stack_diff(src_idx, &old_src_stack, self.board.get(src));
@@ -322,7 +348,11 @@ impl GameState {
         }
 
         // Adjust reserves back for Place moves.
-        if let Move::Place { square: _, piece_type } = mv {
+        if let Move::Place {
+            square: _,
+            piece_type,
+        } = mv
+        {
             let mover = self.side_to_move.opposite(); // side that made the move
             let (place_color, place_type) = if self.ply <= 2 {
                 // Opening: was placing opponent's flat. ply is already incremented,
@@ -353,7 +383,11 @@ impl GameState {
     fn check_game_over(&mut self, mover: Color) {
         // 1. Check for repetition (third occurrence of the current hash).
         let current_hash = self.zobrist;
-        let count = self.hash_history.iter().filter(|&&h| h == current_hash).count();
+        let count = self
+            .hash_history
+            .iter()
+            .filter(|&&h| h == current_hash)
+            .count();
         if count >= 3 {
             self.result = GameResult::Draw;
             return;
@@ -497,7 +531,11 @@ fn check_road_direction(road_squares: u64, n: usize, north_south: bool) -> bool 
         next |= (frontier & not_first_col) >> 1;
 
         // Only keep squares that are road squares and not yet visited.
-        let valid_mask = if n < 8 { (1u64 << (n * n)) - 1 } else { u64::MAX };
+        let valid_mask = if n < 8 {
+            (1u64 << (n * n)) - 1
+        } else {
+            u64::MAX
+        };
         frontier = next & road_squares & !visited & valid_mask;
     }
 
@@ -526,7 +564,11 @@ fn build_col_mask(n: usize, exclude_col: usize) -> u64 {
 /// Expand a bitset by one orthogonal step in all four directions.
 #[inline]
 fn expand_one_step(bits: u64, n: usize) -> u64 {
-    let valid_mask = if n < 8 { (1u64 << (n * n)) - 1 } else { u64::MAX };
+    let valid_mask = if n < 8 {
+        (1u64 << (n * n)) - 1
+    } else {
+        u64::MAX
+    };
     let not_last_col = build_col_mask(n, n - 1);
     let not_first_col = build_col_mask(n, 0);
 
@@ -548,7 +590,11 @@ fn expand_one_step(bits: u64, n: usize) -> u64 {
 /// the O(legal_moves) approach of cloning state for every move.
 pub fn road_bridging_squares(board: &Board, size: u8, color: Color) -> u64 {
     let n = size as usize;
-    let valid_mask = if n < 8 { (1u64 << (n * n)) - 1 } else { u64::MAX };
+    let valid_mask = if n < 8 {
+        (1u64 << (n * n)) - 1
+    } else {
+        u64::MAX
+    };
     let mut road_sq: u64 = 0;
     let mut occupied: u64 = 0;
 
@@ -594,12 +640,7 @@ pub fn road_bridging_squares(board: &Board, size: u8, color: Color) -> u64 {
 ///
 /// Thin wrapper around [`road_bridging_squares`] that also verifies the
 /// player has reserves remaining.
-pub fn has_road_in_1_placement(
-    board: &Board,
-    size: u8,
-    color: Color,
-    reserves: &[u8; 4],
-) -> bool {
+pub fn has_road_in_1_placement(board: &Board, size: u8, color: Color, reserves: &[u8; 4]) -> bool {
     let (stones, caps) = match color {
         Color::White => (reserves[0], reserves[1]),
         Color::Black => (reserves[2], reserves[3]),
@@ -616,16 +657,15 @@ pub fn has_road_in_1_placement(
 
 /// Determine the winner (or draw) by flat count, applying komi.
 ///
-/// Komi is added to White's score. If `half_komi` is true, White gets an
-/// additional 0.5 points (breaking ties in White's favor when komi is applied).
+/// Positive komi is added to Black's score. If `half_komi` is true, Black gets
+/// an additional 0.5 points.
 pub fn flat_winner(board: &Board, config: &GameConfig) -> GameResult {
     let (white_flats, black_flats) = board.flat_counts(config.size);
 
     // Compare using doubled values to avoid floating point.
-    // White's doubled score: 2 * white_flats + 2 * komi + (1 if half_komi else 0)
-    let white_doubled =
-        (white_flats as i32) * 2 + (config.komi as i32) * 2 + if config.half_komi { 1 } else { 0 };
-    let black_doubled = (black_flats as i32) * 2;
+    let white_doubled = (white_flats as i32) * 2;
+    let black_doubled =
+        (black_flats as i32) * 2 + (config.komi as i32) * 2 + if config.half_komi { 1 } else { 0 };
 
     if white_doubled > black_doubled {
         GameResult::FlatWin(Color::White)
@@ -818,7 +858,10 @@ mod tests {
         place_flat(&mut board, 1, 0, Color::Black);
         place_flat(&mut board, 1, 1, Color::Black);
 
-        assert_eq!(flat_winner(&board, &config), GameResult::FlatWin(Color::White));
+        assert_eq!(
+            flat_winner(&board, &config),
+            GameResult::FlatWin(Color::White)
+        );
     }
 
     #[test]
@@ -829,7 +872,10 @@ mod tests {
         place_flat(&mut board, 1, 0, Color::Black);
         place_flat(&mut board, 1, 1, Color::Black);
 
-        assert_eq!(flat_winner(&board, &config), GameResult::FlatWin(Color::Black));
+        assert_eq!(
+            flat_winner(&board, &config),
+            GameResult::FlatWin(Color::Black)
+        );
     }
 
     #[test]
@@ -845,49 +891,55 @@ mod tests {
     #[test]
     fn flat_win_with_komi() {
         let mut config = GameConfig::standard(6);
-        config.komi = 2; // White gets +2
+        config.komi = 2; // Black gets +2
 
         let mut board = Board::empty();
-        // 3 white, 5 black. With komi: white=5, black=5 => draw.
-        for c in 0..3u8 {
+        // 5 white vs 3 black. With komi: black=5, so this is a draw.
+        for c in 0..5u8 {
             place_flat(&mut board, 0, c, Color::White);
         }
-        for c in 0..5u8 {
+        for c in 0..3u8 {
             place_flat(&mut board, 1, c, Color::Black);
         }
         assert_eq!(flat_winner(&board, &config), GameResult::Draw);
     }
 
     #[test]
-    fn flat_win_with_komi_white_wins() {
+    fn flat_win_with_komi_black_wins() {
         let mut config = GameConfig::standard(6);
         config.komi = 4;
 
         let mut board = Board::empty();
-        // 2 white + 4 komi = 6, vs 5 black. White wins.
-        place_flat(&mut board, 0, 0, Color::White);
-        place_flat(&mut board, 0, 1, Color::White);
         for c in 0..5u8 {
-            place_flat(&mut board, 1, c, Color::Black);
+            place_flat(&mut board, 0, c, Color::White);
         }
-        assert_eq!(flat_winner(&board, &config), GameResult::FlatWin(Color::White));
+        place_flat(&mut board, 1, 0, Color::Black);
+        place_flat(&mut board, 1, 1, Color::Black);
+        // 5 white vs 2 black + 4 komi = 6 black. Black wins.
+        assert_eq!(
+            flat_winner(&board, &config),
+            GameResult::FlatWin(Color::Black)
+        );
     }
 
     #[test]
     fn flat_win_with_half_komi() {
         let mut config = GameConfig::standard(6);
         config.komi = 2;
-        config.half_komi = true; // White gets +2.5
+        config.half_komi = true; // Black gets +2.5
 
         let mut board = Board::empty();
-        // 3 white + 2.5 komi = 5.5, vs 5 black. White wins.
-        for c in 0..3u8 {
+        for c in 0..5u8 {
             place_flat(&mut board, 0, c, Color::White);
         }
-        for c in 0..5u8 {
+        for c in 0..3u8 {
             place_flat(&mut board, 1, c, Color::Black);
         }
-        assert_eq!(flat_winner(&board, &config), GameResult::FlatWin(Color::White));
+        // 5 white vs 3 black + 2.5 = 5.5 black. Black wins.
+        assert_eq!(
+            flat_winner(&board, &config),
+            GameResult::FlatWin(Color::Black)
+        );
     }
 
     #[test]
@@ -902,7 +954,10 @@ mod tests {
         place_flat(&mut board, 1, 0, Color::Black);
         place_flat(&mut board, 1, 1, Color::Black);
 
-        assert_eq!(flat_winner(&board, &config), GameResult::FlatWin(Color::Black));
+        assert_eq!(
+            flat_winner(&board, &config),
+            GameResult::FlatWin(Color::Black)
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -997,20 +1052,56 @@ mod tests {
         // Opening moves.
         let sq0 = Square::from_rc(0, 0);
         let sq1 = Square::from_rc(4, 4);
-        let undo0 = state.apply_move(Move::Place { square: sq0, piece_type: PieceType::Flat });
-        let undo1 = state.apply_move(Move::Place { square: sq1, piece_type: PieceType::Flat });
+        let undo0 = state.apply_move(Move::Place {
+            square: sq0,
+            piece_type: PieceType::Flat,
+        });
+        let undo1 = state.apply_move(Move::Place {
+            square: sq1,
+            piece_type: PieceType::Flat,
+        });
 
         // Normal moves.
         let sq2 = Square::from_rc(1, 1);
-        let undo2 = state.apply_move(Move::Place { square: sq2, piece_type: PieceType::Wall });
+        let undo2 = state.apply_move(Move::Place {
+            square: sq2,
+            piece_type: PieceType::Wall,
+        });
         let sq3 = Square::from_rc(2, 2);
-        let undo3 = state.apply_move(Move::Place { square: sq3, piece_type: PieceType::Cap });
+        let undo3 = state.apply_move(Move::Place {
+            square: sq3,
+            piece_type: PieceType::Cap,
+        });
 
         // Undo everything.
-        state.undo_move(Move::Place { square: sq3, piece_type: PieceType::Cap }, &undo3);
-        state.undo_move(Move::Place { square: sq2, piece_type: PieceType::Wall }, &undo2);
-        state.undo_move(Move::Place { square: sq1, piece_type: PieceType::Flat }, &undo1);
-        state.undo_move(Move::Place { square: sq0, piece_type: PieceType::Flat }, &undo0);
+        state.undo_move(
+            Move::Place {
+                square: sq3,
+                piece_type: PieceType::Cap,
+            },
+            &undo3,
+        );
+        state.undo_move(
+            Move::Place {
+                square: sq2,
+                piece_type: PieceType::Wall,
+            },
+            &undo2,
+        );
+        state.undo_move(
+            Move::Place {
+                square: sq1,
+                piece_type: PieceType::Flat,
+            },
+            &undo1,
+        );
+        state.undo_move(
+            Move::Place {
+                square: sq0,
+                piece_type: PieceType::Flat,
+            },
+            &undo0,
+        );
 
         // Verify state matches initial.
         assert_eq!(state.ply, 0);
@@ -1034,9 +1125,17 @@ mod tests {
 
         // Manually place a white flat at (2,2).
         let src = Square::from_rc(2, 2);
-        state.board.get_mut(src).push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(src)
+            .push(Piece::new(Color::White, PieceType::Flat));
         state.reserves[0] -= 1; // decrement white stones
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
 
         let initial_zobrist = state.zobrist;
 
@@ -1080,12 +1179,26 @@ mod tests {
 
         let src = Square::from_rc(2, 2);
         // Push bottom-to-top: WF, BF, WF.
-        state.board.get_mut(src).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(src).push(Piece::new(Color::Black, PieceType::Flat));
-        state.board.get_mut(src).push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(src)
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(src)
+            .push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(src)
+            .push(Piece::new(Color::White, PieceType::Flat));
         state.reserves[0] -= 2;
         state.reserves[2] -= 1;
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
 
         let initial_zobrist = state.zobrist;
 
@@ -1129,11 +1242,30 @@ mod tests {
         // Move the stack from (2,2) to (0,2) for the test.
         // Reset board first.
         state.board = Board::empty();
-        state.board.get_mut(src2).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(src2).push(Piece::new(Color::Black, PieceType::Flat));
-        state.board.get_mut(src2).push(Piece::new(Color::White, PieceType::Flat));
-        state.reserves = [config.stones - 2, config.capstones, config.stones - 1, config.capstones];
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state
+            .board
+            .get_mut(src2)
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(src2)
+            .push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(src2)
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state.reserves = [
+            config.stones - 2,
+            config.capstones,
+            config.stones - 1,
+            config.capstones,
+        ];
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         let initial_zobrist2 = state.zobrist;
 
         // Template for pickup=3, travel=3: [1, 1, 1].
@@ -1154,11 +1286,20 @@ mod tests {
         assert!(state.board.get(src2).is_empty());
         // Carried: pop top 3 = [WF, BF, WF]. Reverse = [WF, BF, WF].
         // Step 1 (drop 1): WF(bottom of carried) goes to (1,2).
-        assert_eq!(state.board.get(Square::from_rc(1, 2)).top.unwrap(), Piece::WhiteFlat);
+        assert_eq!(
+            state.board.get(Square::from_rc(1, 2)).top.unwrap(),
+            Piece::WhiteFlat
+        );
         // Step 2 (drop 1): BF goes to (2,2).
-        assert_eq!(state.board.get(Square::from_rc(2, 2)).top.unwrap(), Piece::BlackFlat);
+        assert_eq!(
+            state.board.get(Square::from_rc(2, 2)).top.unwrap(),
+            Piece::BlackFlat
+        );
         // Step 3 (drop 1): WF(top of carried, original top) goes to (3,2).
-        assert_eq!(state.board.get(Square::from_rc(3, 2)).top.unwrap(), Piece::WhiteFlat);
+        assert_eq!(
+            state.board.get(Square::from_rc(3, 2)).top.unwrap(),
+            Piece::WhiteFlat
+        );
 
         // Undo.
         state.undo_move(mv3, &undo3);
@@ -1180,14 +1321,25 @@ mod tests {
         state.side_to_move = Color::White;
 
         let src = Square::from_rc(2, 2);
-        state.board.get_mut(src).push(Piece::new(Color::White, PieceType::Cap));
+        state
+            .board
+            .get_mut(src)
+            .push(Piece::new(Color::White, PieceType::Cap));
         state.reserves[1] -= 1;
 
         let target = Square::from_rc(2, 3);
-        state.board.get_mut(target).push(Piece::new(Color::Black, PieceType::Wall));
+        state
+            .board
+            .get_mut(target)
+            .push(Piece::new(Color::Black, PieceType::Wall));
         state.reserves[2] -= 1;
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         let initial_zobrist = state.zobrist;
 
         let range = state.templates.lookup_range(1, 1);
@@ -1230,14 +1382,25 @@ mod tests {
         state.side_to_move = Color::White;
 
         let src = Square::from_rc(2, 2);
-        state.board.get_mut(src).push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(src)
+            .push(Piece::new(Color::White, PieceType::Flat));
         state.reserves[0] -= 1;
 
         let target = Square::from_rc(2, 3);
-        state.board.get_mut(target).push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(target)
+            .push(Piece::new(Color::Black, PieceType::Flat));
         state.reserves[2] -= 1;
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
 
         let range = state.templates.lookup_range(1, 1);
         let template_id = DropTemplateId(range.base_id);
@@ -1280,13 +1443,27 @@ mod tests {
         state.side_to_move = Color::White;
 
         let src = Square::from_rc(0, 0);
-        state.board.get_mut(src).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(src).push(Piece::new(Color::Black, PieceType::Flat));
-        state.board.get_mut(src).push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(src)
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(src)
+            .push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(src)
+            .push(Piece::new(Color::White, PieceType::Flat));
         state.reserves[0] -= 2;
         state.reserves[2] -= 1;
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         let initial_zobrist = state.zobrist;
 
         // Template for pickup=3, travel=2: first partition is [1, 2], second is [2, 1].
@@ -1350,10 +1527,21 @@ mod tests {
         state.reserves[2] -= 1; // black used 1 stone
 
         // White flat at (0,0), Black flat at (4,4).
-        state.board.get_mut(Square::from_rc(0, 0)).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(4, 4)).push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 0))
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(4, 4))
+            .push(Piece::new(Color::Black, PieceType::Flat));
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         state.hash_history = vec![state.zobrist];
 
         let range11 = state.templates.lookup_range(1, 1);
@@ -1368,28 +1556,56 @@ mod tests {
 
         for _cycle in 0..2 {
             // White: (0,0) -> (0,1) East
-            let mv = Move::Spread { src: Square::from_rc(0, 0), dir: Direction::East, pickup: 1, template: tmpl };
+            let mv = Move::Spread {
+                src: Square::from_rc(0, 0),
+                dir: Direction::East,
+                pickup: 1,
+                template: tmpl,
+            };
             moves.push(mv);
             undos.push(state.apply_move(mv));
-            if state.result.is_terminal() { break; }
+            if state.result.is_terminal() {
+                break;
+            }
 
             // Black: (4,4) -> (4,3) West
-            let mv = Move::Spread { src: Square::from_rc(4, 4), dir: Direction::West, pickup: 1, template: tmpl };
+            let mv = Move::Spread {
+                src: Square::from_rc(4, 4),
+                dir: Direction::West,
+                pickup: 1,
+                template: tmpl,
+            };
             moves.push(mv);
             undos.push(state.apply_move(mv));
-            if state.result.is_terminal() { break; }
+            if state.result.is_terminal() {
+                break;
+            }
 
             // White: (0,1) -> (0,0) West
-            let mv = Move::Spread { src: Square::from_rc(0, 1), dir: Direction::West, pickup: 1, template: tmpl };
+            let mv = Move::Spread {
+                src: Square::from_rc(0, 1),
+                dir: Direction::West,
+                pickup: 1,
+                template: tmpl,
+            };
             moves.push(mv);
             undos.push(state.apply_move(mv));
-            if state.result.is_terminal() { break; }
+            if state.result.is_terminal() {
+                break;
+            }
 
             // Black: (4,3) -> (4,4) East
-            let mv = Move::Spread { src: Square::from_rc(4, 3), dir: Direction::East, pickup: 1, template: tmpl };
+            let mv = Move::Spread {
+                src: Square::from_rc(4, 3),
+                dir: Direction::East,
+                pickup: 1,
+                template: tmpl,
+            };
             moves.push(mv);
             undos.push(state.apply_move(mv));
-            if state.result.is_terminal() { break; }
+            if state.result.is_terminal() {
+                break;
+            }
         }
 
         // After 2 full cycles, the hash should have appeared 3 times => Draw.
@@ -1418,17 +1634,31 @@ mod tests {
         state.reserves[0] -= 4; // white already placed 4 stones
 
         for r in 0..4u8 {
-            state.board.get_mut(Square::from_rc(r, 0)).push(Piece::new(Color::White, PieceType::Flat));
+            state
+                .board
+                .get_mut(Square::from_rc(r, 0))
+                .push(Piece::new(Color::White, PieceType::Flat));
         }
         // Black has a flat somewhere.
-        state.board.get_mut(Square::from_rc(2, 4)).push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(2, 4))
+            .push(Piece::new(Color::Black, PieceType::Flat));
         state.reserves[2] -= 1;
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         state.hash_history = vec![state.zobrist];
 
         // Place white flat at (4,0).
-        let mv = Move::Place { square: Square::from_rc(4, 0), piece_type: PieceType::Flat };
+        let mv = Move::Place {
+            square: Square::from_rc(4, 0),
+            piece_type: PieceType::Flat,
+        };
         let undo = state.apply_move(mv);
 
         assert_eq!(state.result, GameResult::RoadWin(Color::White));
@@ -1449,17 +1679,31 @@ mod tests {
 
         for r in 0..5u8 {
             if r != 2 {
-                state.board.get_mut(Square::from_rc(r, 2)).push(Piece::new(Color::White, PieceType::Flat));
+                state
+                    .board
+                    .get_mut(Square::from_rc(r, 2))
+                    .push(Piece::new(Color::White, PieceType::Flat));
             }
         }
-        state.board.get_mut(Square::from_rc(2, 1)).push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(2, 1))
+            .push(Piece::new(Color::White, PieceType::Flat));
         state.reserves[0] -= 5;
 
         // Black somewhere.
-        state.board.get_mut(Square::from_rc(0, 4)).push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 4))
+            .push(Piece::new(Color::Black, PieceType::Flat));
         state.reserves[2] -= 1;
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         state.hash_history = vec![state.zobrist];
 
         let range = state.templates.lookup_range(1, 1);
@@ -1496,18 +1740,29 @@ mod tests {
         // White flats: (0,0), (0,1), (0,2), (1,0), (1,1) = 5
         // Black flats: (1,2), (2,0), (2,1) = 3
         // Leave (2,2) empty.
-        let white_sqs = [(0,0), (0,1), (0,2), (1,0), (1,1)];
-        let black_sqs = [(1,2), (2,0), (2,1)];
-        for &(r,c) in &white_sqs {
-            state.board.get_mut(Square::from_rc(r, c)).push(Piece::new(Color::White, PieceType::Flat));
+        let white_sqs = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1)];
+        let black_sqs = [(1, 2), (2, 0), (2, 1)];
+        for &(r, c) in &white_sqs {
+            state
+                .board
+                .get_mut(Square::from_rc(r, c))
+                .push(Piece::new(Color::White, PieceType::Flat));
             state.reserves[0] -= 1;
         }
-        for &(r,c) in &black_sqs {
-            state.board.get_mut(Square::from_rc(r, c)).push(Piece::new(Color::Black, PieceType::Flat));
+        for &(r, c) in &black_sqs {
+            state
+                .board
+                .get_mut(Square::from_rc(r, c))
+                .push(Piece::new(Color::Black, PieceType::Flat));
             state.reserves[2] -= 1;
         }
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         state.hash_history = vec![state.zobrist];
 
         // But first we need to check: white has 5 in a row on rows 0 and 1.
@@ -1519,7 +1774,12 @@ mod tests {
 
         // Reset board.
         state.board = Board::empty();
-        state.reserves = [config.stones, config.capstones, config.stones, config.capstones];
+        state.reserves = [
+            config.stones,
+            config.capstones,
+            config.stones,
+            config.capstones,
+        ];
         state.reserves[0] -= 5;
         state.reserves[2] -= 3;
 
@@ -1528,21 +1788,42 @@ mod tests {
         // B W B
         // W B _
         let pattern = [
-            (0, 0, Color::White), (0, 1, Color::Black), (0, 2, Color::White),
-            (1, 0, Color::Black), (1, 1, Color::White), (1, 2, Color::Black),
-            (2, 0, Color::White), (2, 1, Color::Black),
+            (0, 0, Color::White),
+            (0, 1, Color::Black),
+            (0, 2, Color::White),
+            (1, 0, Color::Black),
+            (1, 1, Color::White),
+            (1, 2, Color::Black),
+            (2, 0, Color::White),
+            (2, 1, Color::Black),
         ];
         for &(r, c, color) in &pattern {
-            state.board.get_mut(Square::from_rc(r, c)).push(Piece::new(color, PieceType::Flat));
+            state
+                .board
+                .get_mut(Square::from_rc(r, c))
+                .push(Piece::new(color, PieceType::Flat));
         }
         // Reserves: white placed 4, black placed 4.
-        state.reserves = [config.stones - 4, config.capstones, config.stones - 4, config.capstones];
+        state.reserves = [
+            config.stones - 4,
+            config.capstones,
+            config.stones - 4,
+            config.capstones,
+        ];
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         state.hash_history = vec![state.zobrist];
 
         // White places flat at (2,2) to fill the board. White flats=5, Black flats=4. White wins.
-        let mv = Move::Place { square: Square::from_rc(2, 2), piece_type: PieceType::Flat };
+        let mv = Move::Place {
+            square: Square::from_rc(2, 2),
+            piece_type: PieceType::Flat,
+        };
         let undo = state.apply_move(mv);
 
         // No road should exist in the checkerboard.
@@ -1577,14 +1858,28 @@ mod tests {
         state.reserves = [1, 0, 1, 0];
 
         // White flat at (0,0), Black flat at (1,1).
-        state.board.get_mut(Square::from_rc(0, 0)).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(1, 1)).push(Piece::new(Color::Black, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 0))
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(1, 1))
+            .push(Piece::new(Color::Black, PieceType::Flat));
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         state.hash_history = vec![state.zobrist];
 
         // White places last stone.
-        let mv = Move::Place { square: Square::from_rc(2, 2), piece_type: PieceType::Flat };
+        let mv = Move::Place {
+            square: Square::from_rc(2, 2),
+            piece_type: PieceType::Flat,
+        };
         let undo = state.apply_move(mv);
 
         // White exhausted (0 stones + 0 caps). White flats=2, Black flats=1. White wins.
@@ -1607,27 +1902,71 @@ mod tests {
         let mut state = GameState::new(config);
 
         // Opening moves.
-        let mv0 = Move::Place { square: Square::from_rc(2, 2), piece_type: PieceType::Flat };
+        let mv0 = Move::Place {
+            square: Square::from_rc(2, 2),
+            piece_type: PieceType::Flat,
+        };
         let _u0 = state.apply_move(mv0);
-        let expected = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
-        assert_eq!(state.zobrist, expected, "zobrist mismatch after opening move 0");
+        let expected = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
+        assert_eq!(
+            state.zobrist, expected,
+            "zobrist mismatch after opening move 0"
+        );
 
-        let mv1 = Move::Place { square: Square::from_rc(3, 3), piece_type: PieceType::Flat };
+        let mv1 = Move::Place {
+            square: Square::from_rc(3, 3),
+            piece_type: PieceType::Flat,
+        };
         let _u1 = state.apply_move(mv1);
-        let expected = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
-        assert_eq!(state.zobrist, expected, "zobrist mismatch after opening move 1");
+        let expected = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
+        assert_eq!(
+            state.zobrist, expected,
+            "zobrist mismatch after opening move 1"
+        );
 
         // Normal placement.
-        let mv2 = Move::Place { square: Square::from_rc(0, 0), piece_type: PieceType::Wall };
+        let mv2 = Move::Place {
+            square: Square::from_rc(0, 0),
+            piece_type: PieceType::Wall,
+        };
         let _u2 = state.apply_move(mv2);
-        let expected = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
-        assert_eq!(state.zobrist, expected, "zobrist mismatch after normal wall placement");
+        let expected = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
+        assert_eq!(
+            state.zobrist, expected,
+            "zobrist mismatch after normal wall placement"
+        );
 
         // Black placement.
-        let mv3 = Move::Place { square: Square::from_rc(4, 4), piece_type: PieceType::Flat };
+        let mv3 = Move::Place {
+            square: Square::from_rc(4, 4),
+            piece_type: PieceType::Flat,
+        };
         let _u3 = state.apply_move(mv3);
-        let expected = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
-        assert_eq!(state.zobrist, expected, "zobrist mismatch after black flat placement");
+        let expected = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
+        assert_eq!(
+            state.zobrist, expected,
+            "zobrist mismatch after black flat placement"
+        );
 
         // Spread: move the white flat at (2,2) -- wait, that's a black flat (opening rule).
         // Actually (2,2) has Black flat, (3,3) has White flat.
@@ -1641,8 +1980,16 @@ mod tests {
             template: tmpl,
         };
         let _u4 = state.apply_move(mv4);
-        let expected = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
-        assert_eq!(state.zobrist, expected, "zobrist mismatch after spread move");
+        let expected = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
+        assert_eq!(
+            state.zobrist, expected,
+            "zobrist mismatch after spread move"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1674,20 +2021,34 @@ mod tests {
 
         // Black road: col 4, rows 0..5.
         for r in 0..5u8 {
-            state.board.get_mut(Square::from_rc(r, 4)).push(Piece::new(Color::Black, PieceType::Flat));
+            state
+                .board
+                .get_mut(Square::from_rc(r, 4))
+                .push(Piece::new(Color::Black, PieceType::Flat));
             state.reserves[2] -= 1;
         }
 
         // White near-road: col 0, rows 0..4 (missing row 4).
         for r in 0..4u8 {
-            state.board.get_mut(Square::from_rc(r, 0)).push(Piece::new(Color::White, PieceType::Flat));
+            state
+                .board
+                .get_mut(Square::from_rc(r, 0))
+                .push(Piece::new(Color::White, PieceType::Flat));
             state.reserves[0] -= 1;
         }
         // White flat at (4,1) to spread west to (4,0).
-        state.board.get_mut(Square::from_rc(4, 1)).push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(4, 1))
+            .push(Piece::new(Color::White, PieceType::Flat));
         state.reserves[0] -= 1;
 
-        state.zobrist = zobrist::compute_full(&state.board, config.size, state.side_to_move, &state.reserves);
+        state.zobrist = zobrist::compute_full(
+            &state.board,
+            config.size,
+            state.side_to_move,
+            &state.reserves,
+        );
         state.hash_history = vec![state.zobrist];
 
         // White spreads (4,1) west to (4,0), completing White's north-south road.
@@ -1737,16 +2098,31 @@ mod tests {
         let mut state = GameState::new(GameConfig::standard(5));
         state.ply = 2;
         // 3 white flats, 1 black flat
-        state.board.get_mut(Square::from_rc(0, 0)).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(0, 1)).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(0, 2)).push(Piece::new(Color::White, PieceType::Flat));
-        state.board.get_mut(Square::from_rc(4, 4)).push(Piece::new(Color::Black, PieceType::Flat));
-        
+        state
+            .board
+            .get_mut(Square::from_rc(0, 0))
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 1))
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(0, 2))
+            .push(Piece::new(Color::White, PieceType::Flat));
+        state
+            .board
+            .get_mut(Square::from_rc(4, 4))
+            .push(Piece::new(Color::Black, PieceType::Flat));
+
         assert_eq!(state.flat_margin(), 2);
 
-        // Add komi of 2
+        // Add komi of 2 for Black
         state.config.komi = 2;
-        assert_eq!(state.flat_margin(), 4);
+        assert_eq!(state.flat_margin(), 0);
+
+        state.config.half_komi = true;
+        assert_eq!(state.flat_margin(), -1);
     }
 
     // -----------------------------------------------------------------------
@@ -1810,8 +2186,8 @@ mod tests {
 
     #[test]
     fn undo_n_random_moves_restores_initial_state() {
-        use rand::SeedableRng;
         use rand::Rng;
+        use rand::SeedableRng;
         use rand_xoshiro::Xoshiro256PlusPlus;
 
         for size in 3..=6u8 {
@@ -1846,7 +2222,11 @@ mod tests {
                 }
 
                 // Verify state matches initial state.
-                assert_eq!(state.ply, 0, "size={} seed={} played={}", size, seed, num_played);
+                assert_eq!(
+                    state.ply, 0,
+                    "size={} seed={} played={}",
+                    size, seed, num_played
+                );
                 assert_eq!(state.side_to_move, Color::White);
                 assert_eq!(state.result, GameResult::Ongoing);
                 assert_eq!(state.zobrist, initial_state.zobrist);

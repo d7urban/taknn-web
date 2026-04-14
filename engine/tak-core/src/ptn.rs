@@ -202,10 +202,18 @@ fn parse_spread(s: &str, state: &GameState) -> Result<Move, PtnError> {
         }
     }
     let template = found_id.ok_or_else(|| {
-        PtnError::InvalidMove(format!("no template for pickup={} drops={:?}", pickup, drops))
+        PtnError::InvalidMove(format!(
+            "no template for pickup={} drops={:?}",
+            pickup, drops
+        ))
     })?;
 
-    Ok(Move::Spread { src, dir, pickup, template })
+    Ok(Move::Spread {
+        src,
+        dir,
+        pickup,
+        template,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +231,12 @@ pub fn format_move(mv: Move, state: &GameState) -> String {
                 PieceType::Cap => format!("C{}", sq),
             }
         }
-        Move::Spread { src, dir, pickup, template } => {
+        Move::Spread {
+            src,
+            dir,
+            pickup,
+            template,
+        } => {
             let drops = &state.templates.get_sequence(template).drops;
             let mut result = String::new();
 
@@ -254,6 +267,8 @@ pub fn format_move(mv: Move, state: &GameState) -> String {
 /// Parse a full PTN game. Returns the final GameState and the list of moves.
 pub fn parse_game(ptn: &str) -> Result<(GameState, Vec<Move>), PtnError> {
     let mut size: u8 = 6; // default
+    let mut komi: i8 = 0;
+    let mut half_komi = false;
     let mut lines = ptn.lines().peekable();
 
     // Parse headers.
@@ -265,13 +280,19 @@ pub fn parse_game(ptn: &str) -> Result<(GameState, Vec<Move>), PtnError> {
                     .parse()
                     .map_err(|_| PtnError::InvalidHeader(format!("bad size: {}", val)))?;
             }
+            if let Some(val) = extract_header(line, "Komi") {
+                (komi, half_komi) = parse_komi_header(val)?;
+            }
             lines.next();
         } else {
             break;
         }
     }
 
-    let mut state = GameState::new(GameConfig::standard(size));
+    let mut config = GameConfig::standard(size);
+    config.komi = komi;
+    config.half_komi = half_komi;
+    let mut state = GameState::new(config);
     let mut moves = Vec::new();
 
     // Parse moves.
@@ -325,10 +346,33 @@ fn extract_header<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     }
 }
 
+fn parse_komi_header(val: &str) -> Result<(i8, bool), PtnError> {
+    let val = val.trim();
+    if let Some(base) = val.strip_suffix(".5") {
+        let komi = base
+            .parse::<i8>()
+            .map_err(|_| PtnError::InvalidHeader(format!("bad komi: {}", val)))?;
+        Ok((komi, true))
+    } else {
+        let komi = val
+            .parse::<i8>()
+            .map_err(|_| PtnError::InvalidHeader(format!("bad komi: {}", val)))?;
+        Ok((komi, false))
+    }
+}
+
 /// Format a game as PTN.
 pub fn format_game(config: &GameConfig, moves: &[Move]) -> String {
     let mut result = String::new();
-    result.push_str(&format!("[Size \"{}\"]\n\n", config.size));
+    result.push_str(&format!("[Size \"{}\"]\n", config.size));
+    if config.komi != 0 || config.half_komi {
+        result.push_str(&format!(
+            "[Komi \"{}{}\"]\n",
+            config.komi,
+            if config.half_komi { ".5" } else { "" }
+        ));
+    }
+    result.push('\n');
 
     let mut state = GameState::new(*config);
     let mut move_num = 1;
@@ -387,15 +431,24 @@ mod tests {
         let state = GameState::new(GameConfig::standard(5));
         assert_eq!(
             parse_move("Fa1", &state).unwrap(),
-            Move::Place { square: Square::from_rc(0, 0), piece_type: PieceType::Flat }
+            Move::Place {
+                square: Square::from_rc(0, 0),
+                piece_type: PieceType::Flat
+            }
         );
         assert_eq!(
             parse_move("Sa1", &state).unwrap(),
-            Move::Place { square: Square::from_rc(0, 0), piece_type: PieceType::Wall }
+            Move::Place {
+                square: Square::from_rc(0, 0),
+                piece_type: PieceType::Wall
+            }
         );
         assert_eq!(
             parse_move("Ca1", &state).unwrap(),
-            Move::Place { square: Square::from_rc(0, 0), piece_type: PieceType::Cap }
+            Move::Place {
+                square: Square::from_rc(0, 0),
+                piece_type: PieceType::Cap
+            }
         );
     }
 
@@ -403,15 +456,29 @@ mod tests {
     fn parse_spread_simple() {
         let mut state = GameState::new(GameConfig::standard(5));
         // Set up: opening placements.
-        state.apply_move(Move::Place { square: Square::from_rc(0, 0), piece_type: PieceType::Flat });
-        state.apply_move(Move::Place { square: Square::from_rc(1, 1), piece_type: PieceType::Flat });
-        state.apply_move(Move::Place { square: Square::from_rc(2, 0), piece_type: PieceType::Flat });
-        state.apply_move(Move::Place { square: Square::from_rc(3, 3), piece_type: PieceType::Flat });
+        state.apply_move(Move::Place {
+            square: Square::from_rc(0, 0),
+            piece_type: PieceType::Flat,
+        });
+        state.apply_move(Move::Place {
+            square: Square::from_rc(1, 1),
+            piece_type: PieceType::Flat,
+        });
+        state.apply_move(Move::Place {
+            square: Square::from_rc(2, 0),
+            piece_type: PieceType::Flat,
+        });
+        state.apply_move(Move::Place {
+            square: Square::from_rc(3, 3),
+            piece_type: PieceType::Flat,
+        });
         // Now white can spread (2,0) i.e. "a3".
         // "a3+" = move a3 up (South in our coords), pick up 1, drop 1 on a4.
         let mv = parse_move("a3+", &state).unwrap();
         match mv {
-            Move::Spread { src, dir, pickup, .. } => {
+            Move::Spread {
+                src, dir, pickup, ..
+            } => {
                 assert_eq!(src, Square::from_rc(2, 0));
                 assert_eq!(dir, Direction::South);
                 assert_eq!(pickup, 1);
@@ -424,10 +491,22 @@ mod tests {
     fn parse_spread_with_drops() {
         let mut state = GameState::new(GameConfig::standard(5));
         // Build a stack at (0,0) with 3 pieces.
-        state.apply_move(Move::Place { square: Square::from_rc(0, 0), piece_type: PieceType::Flat });
-        state.apply_move(Move::Place { square: Square::from_rc(4, 4), piece_type: PieceType::Flat });
-        state.apply_move(Move::Place { square: Square::from_rc(1, 0), piece_type: PieceType::Flat });
-        state.apply_move(Move::Place { square: Square::from_rc(3, 3), piece_type: PieceType::Flat });
+        state.apply_move(Move::Place {
+            square: Square::from_rc(0, 0),
+            piece_type: PieceType::Flat,
+        });
+        state.apply_move(Move::Place {
+            square: Square::from_rc(4, 4),
+            piece_type: PieceType::Flat,
+        });
+        state.apply_move(Move::Place {
+            square: Square::from_rc(1, 0),
+            piece_type: PieceType::Flat,
+        });
+        state.apply_move(Move::Place {
+            square: Square::from_rc(3, 3),
+            piece_type: PieceType::Flat,
+        });
 
         // Now stack (1,0) by spreading (0,0) south to (1,0). Wait, (0,0) has a black flat (opening rule).
         // Actually at ply 4, white moves. Let me think about what's on the board.
@@ -470,6 +549,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_game_with_komi_header() {
+        let ptn = r#"[Size "6"]
+[Komi "2"]
+
+1. a1 f6
+"#;
+        let (state, moves) = parse_game(ptn).unwrap();
+        assert_eq!(state.config.komi, 2);
+        assert!(!state.config.half_komi);
+        assert_eq!(moves.len(), 2);
+    }
+
+    #[test]
+    fn format_game_emits_komi_header() {
+        let mut config = GameConfig::standard(6);
+        config.komi = 2;
+        config.half_komi = true;
+        let ptn = format_game(&config, &[]);
+        assert!(ptn.contains("[Komi \"2.5\"]"));
+    }
+
+    #[test]
     fn parse_square_errors() {
         assert!(parse_square("").is_err());
         assert!(parse_square("a").is_err());
@@ -485,11 +586,11 @@ mod tests {
     /// and verify the final position matches.
     #[test]
     fn ptn_roundtrip_50_games() {
-        use rand::SeedableRng;
-        use rand::Rng;
-        use rand_xoshiro::Xoshiro256PlusPlus;
         use crate::state::GameResult;
         use crate::tps;
+        use rand::Rng;
+        use rand::SeedableRng;
+        use rand_xoshiro::Xoshiro256PlusPlus;
 
         let mut rng = Xoshiro256PlusPlus::seed_from_u64(999);
         let mut total_games = 0;

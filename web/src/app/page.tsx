@@ -17,6 +17,7 @@ type TakGame = {
   legalMoves(): MoveInfo[];
   getInfo(): GameInfo;
   getTps(): string;
+  setKomi(komi: number, halfKomi: boolean): void;
   applyMoveIndex(index: number): void;
   applyMovePtn(ptn: string): void;
   undo(): boolean;
@@ -37,7 +38,7 @@ export type SearchInfo = {
   nodes: number;
   pv: string[];
   ttHits: number;
-  engineMode: "neural" | "heuristic";
+  engineMode: "book" | "neural" | "heuristic";
   modelName?: string;
 };
 
@@ -97,6 +98,8 @@ export default function Home() {
   const [legalMoves, setLegalMoves] = useState<MoveInfo[]>([]);
   const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
   const [placementType, setPlacementType] = useState<"flat" | "wall" | "cap">("flat");
+  const [komi, setKomi] = useState(2);
+  const [halfKomi, setHalfKomi] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Interaction state: idle, stackSelected (clicked a stack), or spreading (building a spread move).
@@ -201,10 +204,12 @@ export default function Home() {
       if (!wasm) return;
       gameRef.current?.free();
       gameRef.current = new wasm.TakGame(size);
+      gameRef.current.setKomi(komi, halfKomi);
       setPlacementType("flat");
+      setLastSearchInfo(null);
       refreshState(false);
     },
-    [wasm, refreshState]
+    [wasm, komi, halfKomi, refreshState]
   );
 
   // Auto-start a 6x6 game.
@@ -242,8 +247,28 @@ export default function Home() {
     const tps = game.getTps();
     setBotThinking(true);
     resetInteraction();
-    worker.postMessage({ type: "search", tps, maxDepth: 20, timeMs: 3000 });
-  }, [botThinking, resetInteraction]);
+    worker.postMessage({
+      type: "search",
+      tps,
+      komi: gameInfo?.komi ?? komi,
+      halfKomi: gameInfo?.halfKomi ?? halfKomi,
+      maxDepth: 20,
+      timeMs: 3000,
+    });
+  }, [botThinking, gameInfo, komi, halfKomi, resetInteraction]);
+
+  const handleKomiChange = useCallback(
+    (nextKomi: number, nextHalfKomi: boolean) => {
+      setKomi(nextKomi);
+      setHalfKomi(nextHalfKomi);
+      const game = gameRef.current;
+      if (!game) return;
+      game.setKomi(nextKomi, nextHalfKomi);
+      setLastSearchInfo(null);
+      refreshState(false);
+    },
+    [refreshState]
+  );
 
   // Escape key cancels interaction.
   useEffect(() => {
@@ -440,6 +465,9 @@ export default function Home() {
           onNewGame={startGame}
           onMoveSelect={handleMoveSelect}
           onUndo={handleUndo}
+          komi={komi}
+          halfKomi={halfKomi}
+          onKomiChange={handleKomiChange}
           placementType={placementType}
           onPlacementTypeChange={setPlacementType}
           selectedStack={selectedStack}

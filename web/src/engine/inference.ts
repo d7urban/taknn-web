@@ -5,6 +5,12 @@ type MoveInfo = {
   ptn: string;
 };
 
+type GameInfo = {
+  sideToMove: "white" | "black";
+  result: string;
+  ply: number;
+};
+
 export type SearchInfo = {
   bestMove: string;
   score: number;
@@ -12,14 +18,18 @@ export type SearchInfo = {
   nodes: number;
   pv: string[];
   ttHits: number;
-  engineMode: "neural" | "heuristic";
+  engineMode: "book" | "neural" | "heuristic";
   modelName?: string;
 };
 
 export type WasmGame = {
+  applyMoveIndex(index: number): void;
   encodeBoard(): Float32Array;
-  sizeId(): number;
+  getInfo(): GameInfo;
+  getTps(): string;
   legalMoves(): MoveInfo[];
+  sizeId(): number;
+  undo(): boolean;
 };
 
 type WasmNeuralPolicy = {
@@ -38,6 +48,24 @@ type NeuralRuntime = {
   modelName: string;
   policy: WasmNeuralPolicy;
   session: ort.InferenceSession;
+};
+
+type PositionAnalysis = {
+  score: number;
+  orderedMoves: MoveInfo[];
+};
+
+type SearchNode = {
+  score: number;
+  pv: string[];
+};
+
+type SearchContext = {
+  deadlineMs: number;
+  nodes: number;
+  cacheHits: number;
+  runtime: NeuralRuntime;
+  analysisCache: Map<string, PositionAnalysis>;
 };
 
 type ModelCandidate = {
@@ -64,7 +92,16 @@ const MODEL_CANDIDATES: ModelCandidate[] = [
   },
 ];
 
+const SCORE_INF = 1_000_000;
+const SCORE_MATE = 100_000;
+
 let runtimePromise: Promise<NeuralRuntime | null> | null = null;
+
+class SearchTimeout extends Error {
+  constructor() {
+    super("neural search timed out");
+  }
+}
 
 export async function initNeuralRuntime(
   wasmModule: WasmModule,
@@ -84,6 +121,8 @@ export async function initNeuralRuntime(
 export async function selectMoveWithNeural(
   wasmModule: WasmModule,
   game: WasmGame,
+  maxDepth: number,
+  timeMs: number,
 ): Promise<SearchInfo | null> {
   const runtime = await initNeuralRuntime(wasmModule);
   if (!runtime) {
@@ -95,6 +134,190 @@ export async function selectMoveWithNeural(
     throw new Error("No legal moves available for neural inference");
   }
 
+  const context: SearchContext = {
+    deadlineMs: performance.now() + Math.max(timeMs, 1),
+    nodes: 0,
+    cacheHits: 0,
+    runtime,
+    analysisCache: new Map<string, PositionAnalysis>(),
+  };
+
+  const rootAnalysis = await analyzePosition(game, context);
+  const fallbackMove = rootAnalysis.orderedMoves[0] ?? legalMoves[0];
+  let bestMove = fallbackMove;
+  let bestScore = rootAnalysis.score;
+  let bestPv = [fallbackMove.ptn];
+  let completedDepth = 0;
+
+  try {
+    for (let depth = 1; depth <= Math.max(1, maxDepth); depth += 1) {
+      const result = await searchRoot(game, depth, context);
+      if (result.pv.length > 0) {
+        bestMove = legalMoves.find((move) => move.ptn === result.pv[0]) ?? bestMove;
+        bestPv = result.pv;
+      }
+      bestScore = result.score;
+      completedDepth = depth;
+    }
+  } catch (error: unknown) {
+    if (!(error instanceof SearchTimeout)) {
+      throw error;
+    }
+  }
+
+  return {
+    bestMove: bestMove.ptn,
+    score: bestScore,
+    depth: completedDepth,
+    nodes: context.nodes,
+    pv: bestPv,
+    ttHits: context.cacheHits,
+    engineMode: "neural",
+    modelName: runtime.modelName,
+  };
+}
+
+async function searchRoot(
+  game: WasmGame,
+  depth: number,
+  context: SearchContext,
+): Promise<SearchNode> {
+  ensureTimeRemaining(context);
+
+  const analysis = await analyzePosition(game, context);
+  let alpha = -SCORE_INF;
+  const beta = SCORE_INF;
+  let bestScore = -SCORE_INF;
+  let bestPv: string[] = [];
+
+  for (let index = 0; index < analysis.orderedMoves.length; index += 1) {
+    ensureTimeRemaining(context);
+    const move = analysis.orderedMoves[index];
+    game.applyMoveIndex(move.index);
+
+    let child: SearchNode;
+    if (index === 0) {
+      child = await pvs(game, depth - 1, -beta, -alpha, context, 1);
+    } else {
+      child = await pvs(game, depth - 1, -alpha - 1, -alpha, context, 1);
+      let score = -child.score;
+      if (score > alpha && score < beta) {
+        child = await pvs(game, depth - 1, -beta, -alpha, context, 1);
+        score = -child.score;
+      }
+    }
+
+    if (!game.undo()) {
+      throw new Error("Failed to undo move during root neural search");
+    }
+
+    const score = -child.score;
+    if (score > bestScore) {
+      bestScore = score;
+      bestPv = [move.ptn, ...child.pv];
+    }
+    if (score > alpha) {
+      alpha = score;
+    }
+  }
+
+  return {
+    score: bestScore,
+    pv: bestPv,
+  };
+}
+
+async function pvs(
+  game: WasmGame,
+  depth: number,
+  alpha: number,
+  beta: number,
+  context: SearchContext,
+  plyFromRoot: number,
+): Promise<SearchNode> {
+  ensureTimeRemaining(context);
+  context.nodes += 1;
+
+  const terminalScore = scoreTerminal(game.getInfo(), plyFromRoot);
+  if (terminalScore !== null) {
+    return { score: terminalScore, pv: [] };
+  }
+
+  if (depth <= 0) {
+    const analysis = await analyzePosition(game, context);
+    return { score: analysis.score, pv: [] };
+  }
+
+  const analysis = await analyzePosition(game, context);
+  if (analysis.orderedMoves.length === 0) {
+    return { score: analysis.score, pv: [] };
+  }
+
+  let bestScore = -SCORE_INF;
+  let bestPv: string[] = [];
+  let localAlpha = alpha;
+
+  for (let index = 0; index < analysis.orderedMoves.length; index += 1) {
+    ensureTimeRemaining(context);
+    const move = analysis.orderedMoves[index];
+    game.applyMoveIndex(move.index);
+
+    let child: SearchNode;
+    if (index === 0) {
+      child = await pvs(game, depth - 1, -beta, -localAlpha, context, plyFromRoot + 1);
+    } else {
+      child = await pvs(game, depth - 1, -localAlpha - 1, -localAlpha, context, plyFromRoot + 1);
+      let score = -child.score;
+      if (score > localAlpha && score < beta) {
+        child = await pvs(game, depth - 1, -beta, -localAlpha, context, plyFromRoot + 1);
+        score = -child.score;
+      }
+    }
+
+    if (!game.undo()) {
+      throw new Error("Failed to undo move during neural search");
+    }
+
+    const score = -child.score;
+    if (score > bestScore) {
+      bestScore = score;
+      bestPv = [move.ptn, ...child.pv];
+    }
+    if (score > localAlpha) {
+      localAlpha = score;
+    }
+    if (localAlpha >= beta) {
+      break;
+    }
+  }
+
+  return {
+    score: bestScore,
+    pv: bestPv,
+  };
+}
+
+async function analyzePosition(
+  game: WasmGame,
+  context: SearchContext,
+): Promise<PositionAnalysis> {
+  ensureTimeRemaining(context);
+
+  const tps = game.getTps();
+  const cached = context.analysisCache.get(tps);
+  if (cached) {
+    context.cacheHits += 1;
+    return cached;
+  }
+
+  const legalMoves = game.legalMoves();
+  if (legalMoves.length === 0) {
+    const terminal = scoreTerminal(game.getInfo(), 0) ?? 0;
+    const empty = { score: terminal, orderedMoves: [] };
+    context.analysisCache.set(tps, empty);
+    return empty;
+  }
+
   const boardTensor = game.encodeBoard();
   const sizeId = game.sizeId();
   const feeds: Record<string, ort.Tensor> = {
@@ -102,12 +325,13 @@ export async function selectMoveWithNeural(
     size_id: new ort.Tensor("int64", BigInt64Array.of(BigInt(sizeId)), [1]),
   };
 
-  const outputs = await runtime.session.run(feeds);
+  const outputs = await context.runtime.session.run(feeds);
+  const wdl = requireTensor(outputs, "wdl");
+  const margin = requireTensor(outputs, "margin");
   const spatial = requireTensor(outputs, "spatial");
   const globalPool = requireTensor(outputs, "global_pool");
-  const margin = requireTensor(outputs, "margin");
 
-  const moveProbabilities = runtime.policy.scoreMoves(
+  const moveProbabilities = context.runtime.policy.scoreMoves(
     game,
     toFloat32Array(spatial.data),
     toFloat32Array(globalPool.data),
@@ -119,20 +343,20 @@ export async function selectMoveWithNeural(
     );
   }
 
-  const bestIndex = argmax(moveProbabilities);
-  const bestMove = legalMoves[bestIndex];
+  const wdlValues = toFloat32Array(wdl.data);
   const marginValue = toFloat32Array(margin.data)[0] ?? 0;
+  const scalar = ((wdlValues[0] ?? 0) - (wdlValues[2] ?? 0)) + 0.5 * marginValue;
+  const orderedMoves = legalMoves
+    .map((move, index) => ({ move, probability: moveProbabilities[index] ?? 0 }))
+    .sort((left, right) => right.probability - left.probability)
+    .map(({ move }) => move);
 
-  return {
-    bestMove: bestMove.ptn,
-    score: Math.round(marginValue * 500),
-    depth: 0,
-    nodes: legalMoves.length,
-    pv: [bestMove.ptn],
-    ttHits: 0,
-    engineMode: "neural",
-    modelName: runtime.modelName,
+  const analysis = {
+    score: Math.round(scalar * 500),
+    orderedMoves,
   };
+  context.analysisCache.set(tps, analysis);
+  return analysis;
 }
 
 async function loadNeuralRuntime(
@@ -207,17 +431,22 @@ function toFloat32Array(
   return Float32Array.from(data as ArrayLike<number>);
 }
 
-function argmax(values: ArrayLike<number>): number {
-  let bestIndex = 0;
-  let bestValue = Number.NEGATIVE_INFINITY;
+function ensureTimeRemaining(context: SearchContext): void {
+  if (performance.now() >= context.deadlineMs) {
+    throw new SearchTimeout();
+  }
+}
 
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
-    if (value > bestValue) {
-      bestValue = value;
-      bestIndex = index;
-    }
+function scoreTerminal(info: GameInfo, plyFromRoot: number): number | null {
+  if (info.result === "ongoing") {
+    return null;
+  }
+  if (info.result === "draw") {
+    return 0;
   }
 
-  return bestIndex;
+  const winner = info.result.endsWith("white") ? "white" : "black";
+  return winner === info.sideToMove
+    ? SCORE_MATE - plyFromRoot
+    : -SCORE_MATE + plyFromRoot;
 }

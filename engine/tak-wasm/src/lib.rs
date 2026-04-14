@@ -7,11 +7,13 @@ use wasm_bindgen::prelude::*;
 
 use tak_core::board::Square;
 use tak_core::descriptor::{self, MoveDescriptor};
-use tak_core::moves::Move;
+use tak_core::moves::{Direction, Move};
 use tak_core::piece::PieceType;
 use tak_core::ptn;
 use tak_core::rules::GameConfig;
-use tak_core::state::{GameResult, GameState};
+use tak_core::state::{self, GameResult, GameState};
+use tak_core::symmetry::D4;
+use tak_core::templates::DropTemplateId;
 use tak_core::tensor::BoardTensor;
 use tak_core::tps;
 
@@ -520,6 +522,136 @@ fn bool_to_f32(value: bool) -> f32 {
     }
 }
 
+fn canonical_book_key(state: &GameState) -> (String, D4) {
+    let mut best_key = String::new();
+    let mut best_sym = D4::Identity;
+    let mut initialized = false;
+
+    for &sym in &D4::ALL {
+        let mut transformed = state.clone();
+        transformed.board = state.board.transform(sym, state.config.size);
+        let key = tps::to_tps(&transformed);
+
+        if !initialized || key < best_key {
+            best_key = key;
+            best_sym = sym;
+            initialized = true;
+        }
+    }
+
+    (best_key, best_sym)
+}
+
+fn parse_book_move_key(move_key: &str) -> Result<Move, JsError> {
+    let parts: Vec<&str> = move_key.split(':').collect();
+    match parts.as_slice() {
+        ["P", square, piece_type] => {
+            let square = square
+                .parse::<u8>()
+                .map_err(|_| JsError::new(&format!("invalid book square index in {}", move_key)))?;
+            let piece_type = match piece_type.parse::<u8>() {
+                Ok(0) => PieceType::Flat,
+                Ok(1) => PieceType::Wall,
+                Ok(2) => PieceType::Cap,
+                _ => {
+                    return Err(JsError::new(&format!(
+                        "invalid placement piece type in {}",
+                        move_key
+                    )))
+                }
+            };
+
+            Ok(Move::Place {
+                square: Square(square),
+                piece_type,
+            })
+        }
+        ["S", src, direction, pickup, template] => {
+            let src = src
+                .parse::<u8>()
+                .map_err(|_| JsError::new(&format!("invalid spread source in {}", move_key)))?;
+            let direction = match direction.parse::<u8>() {
+                Ok(0) => Direction::North,
+                Ok(1) => Direction::East,
+                Ok(2) => Direction::South,
+                Ok(3) => Direction::West,
+                _ => {
+                    return Err(JsError::new(&format!(
+                        "invalid spread direction in {}",
+                        move_key
+                    )))
+                }
+            };
+            let pickup = pickup
+                .parse::<u8>()
+                .map_err(|_| JsError::new(&format!("invalid pickup count in {}", move_key)))?;
+            let template = template
+                .parse::<u16>()
+                .map_err(|_| JsError::new(&format!("invalid drop template in {}", move_key)))?;
+
+            Ok(Move::Spread {
+                src: Square(src),
+                dir: direction,
+                pickup,
+                template: DropTemplateId(template),
+            })
+        }
+        _ => Err(JsError::new(&format!(
+            "invalid book move key: {}",
+            move_key
+        ))),
+    }
+}
+
+fn refresh_result_for_komi(state: &mut GameState) {
+    let current_hash = state.zobrist;
+    let repetition_count = state
+        .hash_history
+        .iter()
+        .filter(|&&h| h == current_hash)
+        .count();
+    if repetition_count >= 3 {
+        state.result = GameResult::Draw;
+        return;
+    }
+
+    match state.result {
+        GameResult::RoadWin(color) => {
+            state.result = GameResult::RoadWin(color);
+            return;
+        }
+        _ => {
+            let white_road = state::check_road(
+                &state.board,
+                state.config.size,
+                tak_core::piece::Color::White,
+            );
+            let black_road = state::check_road(
+                &state.board,
+                state.config.size,
+                tak_core::piece::Color::Black,
+            );
+            if white_road && !black_road {
+                state.result = GameResult::RoadWin(tak_core::piece::Color::White);
+                return;
+            }
+            if black_road && !white_road {
+                state.result = GameResult::RoadWin(tak_core::piece::Color::Black);
+                return;
+            }
+        }
+    }
+
+    let board_full = state.board.empty_count(state.config.size) == 0;
+    let white_exhausted = state.reserves[0] == 0 && state.reserves[1] == 0;
+    let black_exhausted = state.reserves[2] == 0 && state.reserves[3] == 0;
+    if board_full || white_exhausted || black_exhausted {
+        state.result = state::flat_winner(&state.board, &state.config);
+    } else {
+        state.result = GameResult::Ongoing;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // JS-facing game wrapper
 // ---------------------------------------------------------------------------
@@ -545,10 +677,23 @@ pub struct GameInfo {
     pub side_to_move: String,
     pub result: String,
     pub tps: String,
+    pub komi: i8,
+    pub half_komi: bool,
     pub white_stones: u8,
     pub white_caps: u8,
     pub black_stones: u8,
     pub black_caps: u8,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpeningBookContext {
+    pub key: String,
+    pub transform: u8,
+    pub ply: u16,
+    pub size: u8,
+    pub komi: i8,
+    pub half_komi: bool,
 }
 
 #[wasm_bindgen]
@@ -575,6 +720,14 @@ impl TakGame {
         })
     }
 
+    /// Update komi settings for the current game.
+    #[wasm_bindgen(js_name = "setKomi")]
+    pub fn set_komi(&mut self, komi: i8, half_komi: bool) {
+        self.state.config.komi = komi;
+        self.state.config.half_komi = half_komi;
+        refresh_result_for_komi(&mut self.state);
+    }
+
     /// Get game info as a JSON object.
     #[wasm_bindgen(js_name = "getInfo")]
     pub fn get_info(&self) -> Result<JsValue, JsError> {
@@ -587,6 +740,8 @@ impl TakGame {
             },
             result: format_result(self.state.result),
             tps: tps::to_tps(&self.state),
+            komi: self.state.config.komi,
+            half_komi: self.state.config.half_komi,
             white_stones: self.state.reserves[0],
             white_caps: self.state.reserves[1],
             black_stones: self.state.reserves[2],
@@ -727,6 +882,40 @@ impl TakGame {
     #[wasm_bindgen(js_name = "getMoveHistory")]
     pub fn get_move_history(&self) -> String {
         ptn::format_game(&self.state.config, &self.move_history)
+    }
+
+    /// Get the canonical opening-book lookup key for the current position.
+    #[wasm_bindgen(js_name = "openingBookContext")]
+    pub fn opening_book_context(&self) -> Result<JsValue, JsError> {
+        let (key, transform) = canonical_book_key(&self.state);
+        let context = OpeningBookContext {
+            key,
+            transform: transform as u8,
+            ply: self.state.ply,
+            size: self.state.config.size,
+            komi: self.state.config.komi,
+            half_komi: self.state.config.half_komi,
+        };
+
+        serde_wasm_bindgen::to_value(&context).map_err(|e| JsError::new(&e.to_string()))
+    }
+
+    /// Resolve a canonical opening-book move back to the current legal move list.
+    #[wasm_bindgen(js_name = "resolveBookMove")]
+    pub fn resolve_book_move(&self, move_key: &str, transform: u8) -> Result<i32, JsError> {
+        let sym = D4::from_u8(transform)
+            .ok_or_else(|| JsError::new(&format!("invalid D4 transform: {}", transform)))?;
+        let canonical_move = parse_book_move_key(move_key)?;
+        let actual_move = sym
+            .inverse()
+            .transform_move(canonical_move, self.state.config.size);
+        let legal = self.state.legal_moves();
+
+        Ok(legal
+            .iter()
+            .position(|&mv| mv == actual_move)
+            .map(|idx| idx as i32)
+            .unwrap_or(-1))
     }
 
     /// Check if the game is over.
@@ -1003,5 +1192,33 @@ mod tests {
             .unwrap_err();
 
         assert!(err.contains("spatial pool length"));
+    }
+
+    #[test]
+    fn canonical_book_key_for_empty_board_is_tps() {
+        let state = GameState::new(GameConfig::standard(6));
+        let (key, transform) = canonical_book_key(&state);
+
+        assert_eq!(key, "x6/x6/x6/x6/x6/x6 1 1");
+        assert_eq!(transform, D4::Identity);
+    }
+
+    #[test]
+    fn resolve_book_move_finds_legal_move() {
+        let game = TakGame::new(5).unwrap();
+        let idx = game
+            .resolve_book_move("P:18:0", D4::Identity as u8)
+            .unwrap();
+
+        assert!(idx >= 0);
+    }
+
+    #[test]
+    fn set_komi_updates_game_info() {
+        let mut game = TakGame::new(6).unwrap();
+        game.set_komi(2, false);
+
+        assert_eq!(game.state.config.komi, 2);
+        assert!(!game.state.config.half_komi);
     }
 }

@@ -60,13 +60,37 @@ impl BoardTensor {
         };
 
         let globals: [(usize, f32); 8] = [
-            (23, if state.side_to_move == Color::White { 1.0 } else { 0.0 }),
+            (
+                23,
+                if state.side_to_move == Color::White {
+                    1.0
+                } else {
+                    0.0
+                },
+            ),
             (24, if state.ply < 2 { 1.0 } else { 0.0 }),
             (25, state.reserves[0] as f32 / max_stones),
             (26, state.reserves[2] as f32 / max_stones),
-            (27, if state.config.capstones > 0 { state.reserves[1] as f32 / max_caps } else { 0.0 }),
-            (28, if state.config.capstones > 0 { state.reserves[3] as f32 / max_caps } else { 0.0 }),
-            (29, state.config.komi as f32 / 4.0),
+            (
+                27,
+                if state.config.capstones > 0 {
+                    state.reserves[1] as f32 / max_caps
+                } else {
+                    0.0
+                },
+            ),
+            (
+                28,
+                if state.config.capstones > 0 {
+                    state.reserves[3] as f32 / max_caps
+                } else {
+                    0.0
+                },
+            ),
+            (
+                29,
+                (state.config.komi as f32 + if state.config.half_komi { 0.5 } else { 0.0 }) / 4.0,
+            ),
             (30, state.ply as f32 / 200.0),
         ];
 
@@ -116,7 +140,7 @@ mod tests {
         // Now (0,0) has a black flat (opening places opponent's piece).
         let t = BoardTensor::encode(&state);
         let si = 0; // row 0, col 0
-        // BlackFlat = piece variant 3, so channel 3 should be 1.0.
+                    // BlackFlat = piece variant 3, so channel 3 should be 1.0.
         assert_eq!(t.data[3 * 64 + si], 1.0);
         // is_occupied (channel 6)
         assert_eq!(t.data[6 * 64 + si], 1.0);
@@ -132,7 +156,8 @@ mod tests {
         let si = 4 * 8 + 4;
         for ch in 0..23 {
             assert_eq!(
-                t.data[ch * 64 + si], 0.0,
+                t.data[ch * 64 + si],
+                0.0,
                 "channel {} at (4,4) should be 0",
                 ch
             );

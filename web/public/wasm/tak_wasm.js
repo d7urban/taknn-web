@@ -213,12 +213,38 @@ export class TakGame {
         return this;
     }
     /**
+     * Get the canonical opening-book lookup key for the current position.
+     * @returns {any}
+     */
+    openingBookContext() {
+        const ret = wasm.takgame_openingBookContext(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * Get current ply.
      * @returns {number}
      */
     ply() {
         const ret = wasm.takgame_ply(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Resolve a canonical opening-book move back to the current legal move list.
+     * @param {string} move_key
+     * @param {number} transform
+     * @returns {number}
+     */
+    resolveBookMove(move_key, transform) {
+        const ptr0 = passStringToWasm0(move_key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.takgame_resolveBookMove(this.__wbg_ptr, ptr0, len0, transform);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
     }
     /**
      * Run heuristic search and return the best move + info.
@@ -233,6 +259,14 @@ export class TakGame {
             throw takeFromExternrefTable0(ret[1]);
         }
         return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Update komi settings for the current game.
+     * @param {number} komi
+     * @param {boolean} half_komi
+     */
+    setKomi(komi, half_komi) {
+        wasm.takgame_setKomi(this.__wbg_ptr, komi, half_komi);
     }
     /**
      * Get the board size.

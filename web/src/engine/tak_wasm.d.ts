@@ -67,14 +67,26 @@ export class TakGame {
      */
     constructor(size: number);
     /**
+     * Get the canonical opening-book lookup key for the current position.
+     */
+    openingBookContext(): any;
+    /**
      * Get current ply.
      */
     ply(): number;
+    /**
+     * Resolve a canonical opening-book move back to the current legal move list.
+     */
+    resolveBookMove(move_key: string, transform: number): number;
     /**
      * Run heuristic search and return the best move + info.
      * `max_depth` and `time_ms` control search limits.
      */
     searchMove(max_depth: number, time_ms: number): any;
+    /**
+     * Update komi settings for the current game.
+     */
+    setKomi(komi: number, half_komi: boolean): void;
     /**
      * Get the board size.
      */
@@ -114,8 +126,11 @@ export interface InitOutput {
     readonly takgame_isGameOver: (a: number) => number;
     readonly takgame_legalMoves: (a: number) => [number, number, number];
     readonly takgame_new: (a: number) => [number, number, number];
+    readonly takgame_openingBookContext: (a: number) => [number, number, number];
     readonly takgame_ply: (a: number) => number;
+    readonly takgame_resolveBookMove: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly takgame_searchMove: (a: number, b: number, c: number) => [number, number, number];
+    readonly takgame_setKomi: (a: number, b: number, c: number) => void;
     readonly takgame_size: (a: number) => number;
     readonly takgame_sizeId: (a: number) => number;
     readonly takgame_undo: (a: number) => number;

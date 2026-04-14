@@ -35,6 +35,9 @@ interface ControlsProps {
   onNewGame: (size: number) => void;
   onMoveSelect: (index: number) => void;
   onUndo: () => void;
+  komi: number;
+  halfKomi: boolean;
+  onKomiChange: (komi: number, halfKomi: boolean) => void;
   placementType: "flat" | "wall" | "cap";
   onPlacementTypeChange: (t: "flat" | "wall" | "cap") => void;
   selectedStack: PieceInfo[] | null;
@@ -54,6 +57,9 @@ export default function Controls({
   onNewGame,
   onMoveSelect,
   onUndo,
+  komi,
+  halfKomi,
+  onKomiChange,
   placementType,
   onPlacementTypeChange,
   selectedStack,
@@ -88,11 +94,41 @@ export default function Controls({
             <b>Result:</b> {gameInfo.result}
           </p>
           <p>
+            <b>Komi:</b> {gameInfo.komi}{gameInfo.halfKomi ? ".5" : ""}
+          </p>
+          <p>
             <b>Reserves:</b> W: {gameInfo.whiteStones}s/{gameInfo.whiteCaps}c | B:{" "}
             {gameInfo.blackStones}s/{gameInfo.blackCaps}c
           </p>
         </div>
       )}
+
+      <div style={{ marginBottom: 12 }}>
+        <b>Komi:</b>{" "}
+        <input
+          type="number"
+          value={komi}
+          min={-8}
+          max={8}
+          step={1}
+          onChange={(e) => {
+            const next = Number.parseInt(e.target.value, 10);
+            if (!Number.isNaN(next)) {
+              onKomiChange(next, halfKomi);
+            }
+          }}
+          style={{ width: 56, marginRight: 8 }}
+        />
+        <label>
+          <input
+            type="checkbox"
+            checked={halfKomi}
+            onChange={(e) => onKomiChange(komi, e.target.checked)}
+            style={{ marginRight: 4 }}
+          />
+          +0.5
+        </label>
+      </div>
 
       <div style={{ marginBottom: 12 }}>
         <b>Place:</b>{" "}
@@ -150,8 +186,18 @@ export default function Controls({
                 display: "inline-block",
                 padding: "1px 6px",
                 borderRadius: 999,
-                backgroundColor: lastSearchInfo.engineMode === "neural" ? "#d9f2e3" : "#ececec",
-                color: lastSearchInfo.engineMode === "neural" ? "#1f6b3a" : "#666",
+                backgroundColor:
+                  lastSearchInfo.engineMode === "book"
+                    ? "#efe3ff"
+                    : lastSearchInfo.engineMode === "neural"
+                      ? "#d9f2e3"
+                      : "#ececec",
+                color:
+                  lastSearchInfo.engineMode === "book"
+                    ? "#6b21a8"
+                    : lastSearchInfo.engineMode === "neural"
+                      ? "#1f6b3a"
+                      : "#666",
                 fontWeight: 600,
               }}
             >

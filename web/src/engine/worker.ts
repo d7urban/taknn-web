@@ -1,9 +1,10 @@
 /// Web Worker for running Tak search off the main thread.
 ///
 /// Protocol:
-///   Main → Worker: { type: "search", tps: string, maxDepth: number, timeMs: number }
+///   Main → Worker: { type: "search", tps: string, komi: number, halfKomi: boolean, maxDepth: number, timeMs: number }
 ///   Worker → Main: { type: "result", ...SearchResultInfo } | { type: "error", message: string }
 
+import { lookupOpeningBookMove } from "./book";
 import { selectMoveWithNeural } from "./inference";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,8 +30,24 @@ self.onmessage = async (e: MessageEvent) => {
     try {
       const mod = await initWasm();
       const game = mod.TakGame.fromTps(msg.tps);
+      game.setKomi(msg.komi ?? 0, msg.halfKomi ?? false);
 
-      const neuralResult = await selectMoveWithNeural(mod, game);
+      const bookResult = await lookupOpeningBookMove(game);
+      if (bookResult) {
+        self.postMessage({
+          type: "result",
+          searchResult: bookResult,
+        });
+        game.free();
+        return;
+      }
+
+      const neuralResult = await selectMoveWithNeural(
+        mod,
+        game,
+        msg.maxDepth || 20,
+        msg.timeMs || 3000,
+      );
       const result = neuralResult ?? {
         ...game.botMove(msg.maxDepth || 20, msg.timeMs || 3000),
         engineMode: "heuristic",

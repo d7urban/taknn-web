@@ -21,6 +21,8 @@ export interface GameInfo {
   sideToMove: string;
   result: string;
   tps: string;
+  komi: number;
+  halfKomi: boolean;
   whiteStones: number;
   whiteCaps: number;
   blackStones: number;
