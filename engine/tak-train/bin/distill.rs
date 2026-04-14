@@ -10,7 +10,7 @@ use tak_train::distill::DistillTrainer;
 #[derive(Parser)]
 #[command(name = "tak-distill", about = "Distill teacher → student")]
 struct Args {
-    /// Path to teacher checkpoint (.pt)
+    /// Path to teacher checkpoint (.safetensors)
     #[arg(long)]
     teacher: PathBuf,
 
@@ -104,11 +104,7 @@ fn main() -> anyhow::Result<()> {
     println!("Loaded {} records", records.len());
 
     let (train_records, val_records) = train_val_split(records, config.val_split);
-    println!(
-        "Train: {}, Val: {}",
-        train_records.len(),
-        val_records.len()
-    );
+    println!("Train: {}, Val: {}", train_records.len(), val_records.len());
 
     let mut train_loader = ShardLoader::new(train_records, config.batch_size);
     let mut val_loader = ShardLoader::new(val_records, config.batch_size);

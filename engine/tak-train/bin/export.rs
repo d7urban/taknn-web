@@ -39,6 +39,10 @@ struct Args {
     /// Skip TPOL policy weight export
     #[arg(long)]
     skip_policy: bool,
+
+    /// Generate an INT8 quantized ONNX model
+    #[arg(long)]
+    quantize: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -100,7 +104,13 @@ fn main() -> anyhow::Result<()> {
         let checkpoint_path = args.out.join(format!("{model_type}.safetensors"));
         let onnx_path = args.out.join(format!("{model_type}_trunk.onnx"));
         let script_path = args.out.join(format!("convert_{model_type}_onnx.py"));
-        export::generate_onnx_script(&net_cfg, &checkpoint_path, &onnx_path, &script_path)?;
+        export::generate_onnx_script(
+            &net_cfg,
+            &checkpoint_path,
+            &onnx_path,
+            &script_path,
+            args.quantize,
+        )?;
     }
 
     // TPOL policy weight export

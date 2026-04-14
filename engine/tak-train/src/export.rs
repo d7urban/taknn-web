@@ -156,6 +156,7 @@ pub fn generate_onnx_script(
     checkpoint_path: &Path,
     onnx_path: &Path,
     script_path: &Path,
+    quantize: bool,
 ) -> anyhow::Result<()> {
     let script = format!(
         r#"#!/usr/bin/env python3
@@ -297,7 +298,7 @@ def load_and_export():
     try:
         import onnxruntime as ort
         import numpy as np
-
+{quantize_block}
         sess = ort.InferenceSession(onnx_path)
         with torch.no_grad():
             pt_wdl, pt_margin, _, _ = model(board, size_id)
@@ -324,6 +325,19 @@ if __name__ == "__main__":
         num_sizes = cfg.num_sizes,
         checkpoint_path = checkpoint_path.display(),
         onnx_path = onnx_path.display(),
+        quantize_block = if quantize {
+            format!(
+                r#"        from onnxruntime.quantization import quantize_dynamic, QuantType
+        quant_path = "{onnx_path}".replace(".onnx", "_int8.onnx")
+        print(f"Quantizing to INT8: {{quant_path}}")
+        quantize_dynamic("{onnx_path}", quant_path, weight_type=QuantType.QUInt8)
+        onnx_path = quant_path
+"#,
+                onnx_path = onnx_path.display()
+            )
+        } else {
+            String::new()
+        }
     );
 
     fs::write(script_path, script)?;
@@ -453,7 +467,7 @@ mod tests {
         let onnx = dir.join("model.onnx");
         let script = dir.join("convert_onnx.py");
 
-        generate_onnx_script(&cfg, &checkpoint, &onnx, &script).unwrap();
+        generate_onnx_script(&cfg, &checkpoint, &onnx, &script, false).unwrap();
 
         assert!(script.exists());
         let content = std::fs::read_to_string(&script).unwrap();
