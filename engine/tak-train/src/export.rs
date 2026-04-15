@@ -327,10 +327,19 @@ if __name__ == "__main__":
         onnx_path = onnx_path.display(),
         quantize_block = if quantize {
             format!(
-                r#"        from onnxruntime.quantization import quantize_dynamic, QuantType
+                r#"        import onnx
+        from onnxruntime.quantization import quantize_dynamic, QuantType
         quant_path = "{onnx_path}".replace(".onnx", "_int8.onnx")
         print(f"Quantizing to INT8: {{quant_path}}")
-        quantize_dynamic("{onnx_path}", quant_path, weight_type=QuantType.QUInt8)
+        # Clear intermediate shape annotations that conflict with strict shape
+        # inference inside quantize_dynamic (FiLM broadcast dims 32 vs 128).
+        model_proto = onnx.load("{onnx_path}")
+        del model_proto.graph.value_info[:]
+        preprocessed = "{onnx_path}".replace(".onnx", "_prep.onnx")
+        onnx.save(model_proto, preprocessed)
+        quantize_dynamic(preprocessed, quant_path, weight_type=QuantType.QUInt8)
+        import os
+        os.remove(preprocessed)
         onnx_path = quant_path
 "#,
                 onnx_path = onnx_path.display()

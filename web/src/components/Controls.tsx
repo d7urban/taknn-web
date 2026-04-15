@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { MoveInfo, GameInfo, PieceInfo } from "@/engine/wasm";
 import { SpreadState, SearchInfo } from "@/app/page";
 
@@ -49,6 +50,9 @@ interface ControlsProps {
   onBotMove: () => void;
   botThinking: boolean;
   lastSearchInfo: SearchInfo | null;
+  onExportTps: () => string;
+  onExportPtn: () => string;
+  onImportTps: (tps: string) => void;
 }
 
 export default function Controls({
@@ -71,8 +75,12 @@ export default function Controls({
   onBotMove,
   botThinking,
   lastSearchInfo,
+  onExportTps,
+  onExportPtn,
+  onImportTps,
 }: ControlsProps) {
   const carryLimit = gameInfo?.size ?? 8;
+  const [importTps, setImportTps] = useState("");
 
   return (
     <div style={{ marginLeft: 24, maxWidth: 340 }}>
@@ -231,6 +239,56 @@ export default function Controls({
           onPieceClick={onPieceClick}
         />
       )}
+
+      <h3 style={{ margin: "0 0 8px" }}>Import / Export</h3>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+          <button
+            onClick={() => {
+              const tps = onExportTps();
+              if (tps) navigator.clipboard.writeText(tps);
+            }}
+            style={{ padding: "4px 10px", fontSize: 12 }}
+          >
+            Copy TPS
+          </button>
+          <button
+            onClick={() => {
+              const ptn = onExportPtn();
+              if (ptn) navigator.clipboard.writeText(ptn);
+            }}
+            style={{ padding: "4px 10px", fontSize: 12 }}
+          >
+            Copy PTN
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 4 }}>
+          <input
+            type="text"
+            placeholder="Paste TPS to load..."
+            value={importTps}
+            onChange={(e) => setImportTps(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && importTps.trim()) {
+                onImportTps(importTps.trim());
+                setImportTps("");
+              }
+            }}
+            style={{ flex: 1, padding: "4px 6px", fontSize: 12 }}
+          />
+          <button
+            onClick={() => {
+              if (importTps.trim()) {
+                onImportTps(importTps.trim());
+                setImportTps("");
+              }
+            }}
+            style={{ padding: "4px 10px", fontSize: 12 }}
+          >
+            Load
+          </button>
+        </div>
+      </div>
 
       <h3 style={{ margin: "0 0 8px" }}>Legal Moves ({legalMoves.length})</h3>
       <div

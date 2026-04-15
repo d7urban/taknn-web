@@ -86,6 +86,11 @@ const MODEL_CANDIDATES: ModelCandidate[] = [
     policyPath: "/models/student_policy.bin",
   },
   {
+    modelName: "teacher-int8",
+    trunkPath: "/models/teacher_trunk_int8.onnx",
+    policyPath: "/models/teacher_policy.bin",
+  },
+  {
     modelName: "teacher",
     trunkPath: "/models/teacher_trunk.onnx",
     policyPath: "/models/teacher_policy.bin",
@@ -196,19 +201,19 @@ async function searchRoot(
     game.applyMoveIndex(move.index);
 
     let child: SearchNode;
-    if (index === 0) {
-      child = await pvs(game, depth - 1, -beta, -alpha, context, 1);
-    } else {
-      child = await pvs(game, depth - 1, -alpha - 1, -alpha, context, 1);
-      let score = -child.score;
-      if (score > alpha && score < beta) {
+    try {
+      if (index === 0) {
         child = await pvs(game, depth - 1, -beta, -alpha, context, 1);
-        score = -child.score;
+      } else {
+        child = await pvs(game, depth - 1, -alpha - 1, -alpha, context, 1);
+        let score = -child.score;
+        if (score > alpha && score < beta) {
+          child = await pvs(game, depth - 1, -beta, -alpha, context, 1);
+          score = -child.score;
+        }
       }
-    }
-
-    if (!game.undo()) {
-      throw new Error("Failed to undo move during root neural search");
+    } finally {
+      game.undo();
     }
 
     const score = -child.score;
@@ -263,19 +268,19 @@ async function pvs(
     game.applyMoveIndex(move.index);
 
     let child: SearchNode;
-    if (index === 0) {
-      child = await pvs(game, depth - 1, -beta, -localAlpha, context, plyFromRoot + 1);
-    } else {
-      child = await pvs(game, depth - 1, -localAlpha - 1, -localAlpha, context, plyFromRoot + 1);
-      let score = -child.score;
-      if (score > localAlpha && score < beta) {
+    try {
+      if (index === 0) {
         child = await pvs(game, depth - 1, -beta, -localAlpha, context, plyFromRoot + 1);
-        score = -child.score;
+      } else {
+        child = await pvs(game, depth - 1, -localAlpha - 1, -localAlpha, context, plyFromRoot + 1);
+        let score = -child.score;
+        if (score > localAlpha && score < beta) {
+          child = await pvs(game, depth - 1, -beta, -localAlpha, context, plyFromRoot + 1);
+          score = -child.score;
+        }
       }
-    }
-
-    if (!game.undo()) {
-      throw new Error("Failed to undo move during neural search");
+    } finally {
+      game.undo();
     }
 
     const score = -child.score;
@@ -396,10 +401,20 @@ async function tryLoadCandidate(
     policyResponse.arrayBuffer(),
   ]);
 
-  const session = await ort.InferenceSession.create(trunkBytes, {
-    executionProviders: ["wasm"],
-    graphOptimizationLevel: "all",
-  });
+  let session: ort.InferenceSession;
+  try {
+    session = await ort.InferenceSession.create(trunkBytes, {
+      executionProviders: ["webgpu"],
+      graphOptimizationLevel: "all",
+    });
+    console.log(`Neural runtime: using WebGPU backend for ${candidate.modelName}`);
+  } catch {
+    session = await ort.InferenceSession.create(trunkBytes, {
+      executionProviders: ["wasm"],
+      graphOptimizationLevel: "all",
+    });
+    console.log(`Neural runtime: WebGPU unavailable, using WASM backend for ${candidate.modelName}`);
+  }
 
   return {
     modelName: candidate.modelName,

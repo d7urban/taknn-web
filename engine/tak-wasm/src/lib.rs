@@ -11,7 +11,7 @@ use tak_core::moves::{Direction, Move};
 use tak_core::piece::PieceType;
 use tak_core::ptn;
 use tak_core::rules::GameConfig;
-use tak_core::state::{self, GameResult, GameState};
+use tak_core::state::{self, GameResult, GameState, UndoInfo};
 use tak_core::symmetry::D4;
 use tak_core::templates::DropTemplateId;
 use tak_core::tensor::BoardTensor;
@@ -660,6 +660,7 @@ fn refresh_result_for_komi(state: &mut GameState) {
 pub struct TakGame {
     state: GameState,
     move_history: Vec<Move>,
+    undo_stack: Vec<UndoInfo>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -707,6 +708,7 @@ impl TakGame {
         Ok(TakGame {
             state: GameState::new(GameConfig::standard(size)),
             move_history: Vec::new(),
+            undo_stack: Vec::new(),
         })
     }
 
@@ -717,6 +719,7 @@ impl TakGame {
         Ok(TakGame {
             state,
             move_history: Vec::new(),
+            undo_stack: Vec::new(),
         })
     }
 
@@ -773,8 +776,9 @@ impl TakGame {
             .get(index)
             .ok_or_else(|| JsError::new(&format!("move index {} out of range", index)))?;
         let mv = *mv;
-        self.state.apply_move(mv);
+        let undo = self.state.apply_move(mv);
         self.move_history.push(mv);
+        self.undo_stack.push(undo);
         Ok(())
     }
 
@@ -787,26 +791,20 @@ impl TakGame {
         if !legal.contains(&mv) {
             return Err(JsError::new(&format!("illegal move: {}", ptn_str)));
         }
-        self.state.apply_move(mv);
+        let undo = self.state.apply_move(mv);
         self.move_history.push(mv);
+        self.undo_stack.push(undo);
         Ok(())
     }
 
     /// Undo the last move. Returns false if no moves to undo.
     pub fn undo(&mut self) -> bool {
-        if self.move_history.is_empty() {
-            return false;
+        if let (Some(mv), Some(undo)) = (self.move_history.pop(), self.undo_stack.pop()) {
+            self.state.undo_move(mv, &undo);
+            true
+        } else {
+            false
         }
-        // Rebuild from scratch (simpler than maintaining undo stack through WASM boundary).
-        let size = self.state.config.size;
-        let moves = self.move_history.clone();
-        self.state = GameState::new(GameConfig::standard(size));
-        self.move_history.clear();
-        for &mv in &moves[..moves.len() - 1] {
-            self.state.apply_move(mv);
-            self.move_history.push(mv);
-        }
-        true
     }
 
     /// Get the board state as a flat array for rendering.

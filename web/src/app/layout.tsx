@@ -1,6 +1,13 @@
-export const metadata = {
+import type { Metadata, Viewport } from "next";
+
+export const metadata: Metadata = {
   title: "TakNN - Play Tak",
-  description: "Browser-based Tak game",
+  description: "Browser-based Tak game with neural network AI",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -29,7 +29,12 @@ The long-term design is documented in [PLAN.md](PLAN.md) and [BUILD_SPEC.md](BUI
 
 - Play Tak on board sizes `3x3` through `8x8`
 - Full legal move generation, PTN/TPS support, and reserve tracking
-- Browser-based bot move search using the Rust engine compiled to WASM
+- Browser neural inference: ONNX Runtime Web trunk + WASM policy scorer, with PVS search
+- WebGPU acceleration when available, automatic WASM fallback
+- INT8 quantized teacher model for fast, small browser deployment (3.3 MB)
+- Opening book consultation in early game
+- PTN/TPS import and export from the browser UI
+- Cross-origin isolation (COOP/COEP) for SharedArrayBuffer support
 - Self-play shard generation in `.tknn` format for bootstrap and iterative training
 - Fully native Rust teacher-net training loop (`tak-iterate`) featuring:
   - Multi-threaded, batched neural inference via `libtorch`
@@ -146,9 +151,27 @@ This single command will:
 Additional binaries are available in `tak-train` for distillation and export:
 - `tak-train` (Raw supervised training)
 - `tak-distill` (Knowledge Distillation)
-- `tak-export` (ONNX / binary weight export)
+- `tak-export` (ONNX / binary weight export, with `--quantize` for INT8)
+
+### Exporting a model for browser play
+
+After training, export the teacher checkpoint for browser deployment:
+
+```bash
+cd engine
+LIBTORCH_USE_PYTORCH=1 cargo run --release --bin tak-export --features nn -- \
+    --checkpoint checkpoints --out ../web/public/models --quantize
+```
+
+Then run the generated conversion script to produce the ONNX file:
+
+```bash
+python web/public/models/convert_teacher_onnx.py
+```
+
+This produces `teacher_trunk_int8.onnx` (quantized) alongside `teacher_policy.bin` and the opening book. The browser app picks up the INT8 model automatically.
 
 ## Notes
 
-- The browser bot currently uses heuristic search through the WASM engine; there is no browser neural inference path wired into the UI yet.
+- The teacher model is still early in training — play quality will improve as training continues through the CP4–CP6 milestones.
 - The repository may contain generated artifacts such as checkpoints and WASM files. Rebuild them when changing the underlying engine or training code.

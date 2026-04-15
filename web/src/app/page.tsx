@@ -17,6 +17,7 @@ type TakGame = {
   legalMoves(): MoveInfo[];
   getInfo(): GameInfo;
   getTps(): string;
+  getMoveHistory(): string;
   setKomi(komi: number, halfKomi: boolean): void;
   applyMoveIndex(index: number): void;
   applyMovePtn(ptn: string): void;
@@ -28,6 +29,7 @@ type TakGame = {
 type WasmModule = {
   TakGame: {
     new(size: number): TakGame;
+    fromTps(tps: string): TakGame;
   };
 };
 
@@ -125,6 +127,10 @@ export default function Home() {
       setWasm(mod as unknown as WasmModule);
       setLoading(false);
     });
+    return () => {
+      gameRef.current?.free();
+      gameRef.current = null;
+    };
   }, []);
 
   // Initialize Web Worker.
@@ -256,6 +262,36 @@ export default function Home() {
       timeMs: 3000,
     });
   }, [botThinking, gameInfo, komi, halfKomi, resetInteraction]);
+
+  const handleExportTps = useCallback((): string => {
+    const game = gameRef.current;
+    if (!game) return "";
+    return game.getTps();
+  }, []);
+
+  const handleExportPtn = useCallback((): string => {
+    const game = gameRef.current;
+    if (!game) return "";
+    return game.getMoveHistory();
+  }, []);
+
+  const handleImportTps = useCallback(
+    (tps: string) => {
+      if (!wasm) return;
+      try {
+        const newGame = wasm.TakGame.fromTps(tps);
+        newGame.setKomi(komi, halfKomi);
+        gameRef.current?.free();
+        gameRef.current = newGame;
+        setLastSearchInfo(null);
+        refreshState(false);
+      } catch (e) {
+        console.error("Invalid TPS:", e);
+        alert("Invalid TPS string");
+      }
+    },
+    [wasm, komi, halfKomi, refreshState]
+  );
 
   const handleKomiChange = useCallback(
     (nextKomi: number, nextHalfKomi: boolean) => {
@@ -481,6 +517,9 @@ export default function Home() {
           onBotMove={handleBotMove}
           botThinking={botThinking}
           lastSearchInfo={lastSearchInfo}
+          onExportTps={handleExportTps}
+          onExportPtn={handleExportPtn}
+          onImportTps={handleImportTps}
         />
       </div>
     </main>
